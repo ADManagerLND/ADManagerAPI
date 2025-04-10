@@ -1,0 +1,113 @@
+{
+  "api": {
+    "apiUrl": "https://api.admanager.local",
+    "apiVersion": "v1",
+    "apiTimeout": 30,
+    "apiRateLimit": 100,
+    "enableLogging": true,
+    "language": "fr",
+    "theme": "light",
+    "itemsPerPage": 10,
+    "sessionTimeout": 30,
+    "enableNotifications": true
+  },
+  "ldap": {
+    "ldapServer": "ldap://admanager.local",
+    "ldapDomain": "ldap://admanager.local",
+    "ldapPort": 389,
+    "ldapBaseDn": "dc=admanager,dc=local",
+    "ldapUsername": "cn=admin,dc=admanager,dc=local",
+    "ldapPassword": "",
+    "ldapSsl": false,
+    "ldapPageSize": 1000
+  },
+  "userAttributes": {
+    "attributes": [
+      {
+        "name": "objectClass",
+        "description": "Contient la liste des classes d'objet Active Directory (ex : top, person, organizationalPerson, user).",
+        "syntax": "String[]",
+        "isRequired": true
+      },
+      {
+        "name": "title",
+        "description": "Titre ou fonction (ex : Élève, Enseignant, etc.)",
+        "syntax": "String",
+        "isRequired": true
+      },
+      {
+        "name": "sAMAccountName",
+        "description": "Identifiant unique pour la connexion au domaine (Windows).",
+        "syntax": "String",
+        "isRequired": true
+      },
+      {
+        "name": "userPrincipalName",
+        "description": "Nom principal d'utilisateur au format e-mail pour la connexion (ex : prenom.nom@domaine.com).",
+        "syntax": "String",
+        "isRequired": true
+      },
+      {
+        "name": "mail",
+        "description": "Adresse de messagerie de l'utilisateur.",
+        "syntax": "String",
+        "isRequired": false
+      },
+      {
+        "name": "givenName",
+        "description": "Prénom de l'utilisateur.",
+        "syntax": "String",
+        "isRequired": true
+      },
+      {
+        "name": "sn",
+        "description": "Nom de famille de l'utilisateur (souvent en majuscule).",
+        "syntax": "String",
+        "isRequired": true
+      },
+      {
+        "name": "initials",
+        "description": "Initiales dérivées du prénom et du nom de l'utilisateur.",
+        "syntax": "String",
+        "isRequired": false
+      },
+      {
+        "name": "cn",
+        "description": "Nom complet de l'utilisateur tel qu'affiché dans l'annuaire (ex : Prénom Nom).",
+        "syntax": "String",
+        "isRequired": true
+      },
+      {
+        "name": "personalTitle",
+        "description": "Civilité ou titre personnel de l'utilisateur (ex : M, Mme).",
+        "syntax": "String",
+        "isRequired": false
+      },
+      {
+        "name": "displayName",
+        "description": "Nom d'affichage standardisé (ex : Prénom NOM).",
+        "syntax": "String",
+        "isRequired": true
+      },
+      {
+        "name": "division",
+        "description": "Groupe ou division (ici stocke la classe de l'élève).",
+        "syntax": "String",
+        "isRequired": false
+      },
+      {
+        "name": "description",
+        "description": "Champ libre décrivant l'utilisateur (ex : Élève de la classe...).",
+        "syntax": "String",
+        "isRequired": false
+      },
+      {
+        "name": "department",
+        "description": "Département, service ou organisation (ex : 'Élèves / [Classe]').",
+        "syntax": "String",
+        "isRequired": false
+      }
+    ]
+  },
+  "imports": []
+} 
