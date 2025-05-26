@@ -32,10 +32,14 @@ public class ConfigService : IConfigService
             {
                 var json = await File.ReadAllTextAsync(_settingsFilePath);
                 _settings = JsonSerializer.Deserialize<ApplicationSettings>(json) ?? new ApplicationSettings();
+                _settings.FolderManagement ??= new FolderManagementSettings();
+                _settings.Fsrm ??= new FsrmSettings();
             }
             else
             {
                 _settings = new ApplicationSettings();
+                _settings.FolderManagement ??= new FolderManagementSettings();
+                _settings.Fsrm ??= new FsrmSettings();
                 await SaveSettingsAsync();
             }
         }
@@ -80,11 +84,11 @@ public class ConfigService : IConfigService
     #endregion
 
     #region Configurations d'import
-    public async Task<List<SavedImportConfig>> GetSavedImportConfigs()
+    public Task<List<SavedImportConfig>> GetSavedImportConfigs()
     {
         try
         {
-            return _settings.Imports;
+            return Task.FromResult(_settings.Imports);
         }
         catch (Exception ex)
         {
@@ -139,14 +143,99 @@ public class ConfigService : IConfigService
             throw;
         }
     }
-    #endregion
 
-    #region Configuration générale
-    public async Task<ApiSettings> GetApiSettingsAsync()
+    /// <summary>
+    /// Supprime toutes les configurations sauvegardées
+    /// </summary>
+    public Task DeleteAllImportConfigs()
     {
         try
         {
-            return _settings.Api;
+            var configDir = GetConfigDirectory();
+            var files = Directory.GetFiles(configDir, "*.import.json");
+            foreach (var file in files)
+            {
+                File.Delete(file);
+            }
+            return Task.CompletedTask;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erreur lors de la suppression de toutes les configurations d'import");
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Supprime une configuration sauvegardée
+    /// </summary>
+    /// <param name="id">ID de la configuration à supprimer</param>
+    private string GetConfigPath(string id)
+    {
+        return Path.Combine(GetConfigDirectory(), $"{id}.import.json");
+    }
+
+    private string GetConfigDirectory()
+    {
+        return _configPath;
+    }
+
+    /// <summary>
+    /// Génère une configuration d'import par défaut
+    /// </summary>
+    /// <param name="objectType">Type d'objet (utilisateur, ordinateur, etc.)</param>
+    /// <returns>Configuration par défaut</returns>
+    public Task<ImportConfig> GenerateDefaultImportConfig(string objectType)
+    {
+        try
+        {
+            var config = new ImportConfig
+            {
+                DefaultOU = "DC=domain,DC=local",
+                CsvDelimiter = ';',
+                HeaderMapping = new Dictionary<string, string>(),
+                ManualColumns = new List<string>()
+            };
+            
+            // Ajouter des mappages par défaut selon le type d'objet
+            if (objectType.Equals("user", StringComparison.OrdinalIgnoreCase))
+            {
+                config.HeaderMapping = new Dictionary<string, string>
+                {
+                    { "login", "sAMAccountName" },
+                    { "firstname", "givenName" },
+                    { "lastname", "sn" },
+                    { "email", "mail" },
+                    { "phone", "telephoneNumber" },
+                    { "title", "title" }
+                };
+            }
+            else if (objectType.Equals("computer", StringComparison.OrdinalIgnoreCase))
+            {
+                config.HeaderMapping = new Dictionary<string, string>
+                {
+                    { "name", "sAMAccountName" },
+                    { "description", "description" },
+                    { "location", "location" }
+                };
+            }
+            
+            return Task.FromResult(config);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, $"Erreur lors de la génération de la configuration par défaut pour {objectType}");
+            throw;
+        }
+    }
+    #endregion
+
+    #region Configuration générale
+    public Task<ApiSettings> GetApiSettingsAsync()
+    {
+        try
+        {
+            return Task.FromResult(_settings.Api);
         }
         catch (Exception ex)
         {
@@ -201,17 +290,17 @@ public class ConfigService : IConfigService
     #endregion
 
     #region Attributs utilisateur
-    public async Task<List<AdAttributeDefinition>> GetUserAttributesAsync()
+    public Task<List<AdAttributeDefinition>> GetUserAttributesAsync()
     {
         try
         {
             if (_settings.UserAttributes.Attributes == null || _settings.UserAttributes.Attributes.Count == 0)
             {
                 _logger.LogInformation("Aucun attribut trouvé dans la configuration, utilisation de la configuration par défaut");
-                return GetDefaultUserAttributes();
+                return Task.FromResult(GetDefaultUserAttributes());
             }
             
-            return _settings.UserAttributes.Attributes;
+            return Task.FromResult(_settings.UserAttributes.Attributes);
         }
         catch (Exception ex)
         {
@@ -248,6 +337,68 @@ public class ConfigService : IConfigService
             new AdAttributeDefinition { Name = "initials", Description = "Initiales de l'utilisateur", Syntax = "String", IsRequired = false },
             new AdAttributeDefinition { Name = "cn", Description = "Nom commun complet", Syntax = "String", IsRequired = true }
         };
+    }
+    #endregion
+
+    #region Folder Management Settings
+    public Task<FolderManagementSettings> GetFolderManagementSettingsAsync()
+    {
+        try
+        {
+            _settings ??= new ApplicationSettings();
+            _settings.FolderManagement ??= new FolderManagementSettings();
+            return Task.FromResult(_settings.FolderManagement);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erreur lors de la récupération de la configuration de gestion des dossiers");
+            throw;
+        }
+    }
+
+    public async Task UpdateFolderManagementSettingsAsync(FolderManagementSettings settings)
+    {
+        try
+        {
+            _settings.FolderManagement = settings;
+            await SaveSettingsAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erreur lors de la mise à jour de la configuration de gestion des dossiers");
+            throw;
+        }
+    }
+    #endregion
+
+    #region FSRM Settings
+    public Task<FsrmSettings> GetFsrmSettingsAsync()
+    {
+        try
+        {
+            _settings ??= new ApplicationSettings();
+            _settings.Fsrm ??= new FsrmSettings();
+            return Task.FromResult(_settings.Fsrm);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erreur lors de la récupération de la configuration FSRM");
+            throw;
+        }
+    }
+
+    public async Task UpdateFsrmSettingsAsync(FsrmSettings settings)
+    {
+        try
+        {
+            _settings.Fsrm = settings;
+            await SaveSettingsAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erreur lors de la mise à jour de la configuration FSRM");
+            throw;
+        }
     }
     #endregion
 }

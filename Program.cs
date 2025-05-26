@@ -4,15 +4,13 @@ using Microsoft.Identity.Web;
 using Microsoft.OpenApi.Models;
 using ADManagerAPI.Services;
 using ADManagerAPI.Services.Interfaces;
-using Microsoft.AspNetCore.WebSockets;
-using ADManagerAPI.Models;
+using ADManagerAPI.Hubs;
+using ADManagerAPI.Services.Parse;
+using OfficeOpenXml;
 
 var builder = WebApplication.CreateBuilder(args);
-
-// Désactiver les assets statiques
 builder.WebHost.UseStaticWebAssets();
 
-// Enregistrer les services de l'application
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 
@@ -28,17 +26,34 @@ builder.Services.AddSwaggerGen(c =>
 
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", builder =>
-        builder.AllowAnyOrigin()
+    // Politique plus restrictive et adaptée pour SignalR et les API
+    options.AddPolicy("AllowSpecificOrigin", builder =>
+        builder.WithOrigins("http://localhost:5173") // Remplacez par l'URL de votre frontend si différente
                .AllowAnyMethod()
                .AllowAnyHeader()
-               .SetIsOriginAllowed((host) => true));
+               .AllowCredentials()); // Crucial pour SignalR
 });
 
+// Enregistrement de SignalR
+builder.Services.AddSignalR(options =>
+{
+    options.EnableDetailedErrors = true;
+    options.MaximumReceiveMessageSize = null; // Pas de limite pour les messages
+    options.StreamBufferCapacity = 20; // Pour le streaming
+});
 
-
+// Enregistrement des services
+builder.Services.AddSingleton<LogService>();
+builder.Services.AddScoped<ILdapService, LdapService>();
+builder.Services.AddScoped<ILogService, LogService>();
 builder.Services.AddSingleton<IConfigService, ConfigService>();
+builder.Services.AddScoped<ICsvManagerService, CsvManagerService>();
+builder.Services.AddSingleton<ISignalRService, SignalRService>();
 
+//PARSER
+builder.Services.AddSingleton<ISpreadsheetParserService, CsvParserService>();
+builder.Services.AddSingleton<ISpreadsheetParserService, ExcelParserService>();
+builder.Services.AddScoped<ICsvManagerService, CsvManagerService>();
 
 
 if (builder.Environment.IsDevelopment())
@@ -56,17 +71,8 @@ if (builder.Environment.IsDevelopment())
 }
 else
 {
-    builder.Services.AddAuthentication(options =>
-    {
-        options.DefaultScheme = JwtBearerDefaults.AuthenticationScheme;
-    })
-    .AddNegotiate()
-    .AddMicrosoftIdentityWebApi(builder.Configuration.GetSection("AzureAd"));
-
-    builder.Services.AddAuthorization(options =>
-    {
-        options.FallbackPolicy = options.DefaultPolicy;
-    });
+    builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+        .AddMicrosoftIdentityWebApi(builder.Configuration.GetSection("AzureAd"));
 }
 
 var app = builder.Build();
@@ -84,12 +90,21 @@ if (!Directory.Exists(configDir))
     app.Logger.LogInformation($"Répertoire de configuration créé: {configDir}");
 }
 
-app.UseCors("AllowAll");
+app.UseCors("AllowSpecificOrigin");
+
 app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
 
+app.MapHub<CsvImportHub>("/csvImportHub");
+app.MapHub<NotificationHub>("/notificationHub");
+
+
+if (builder.Environment.IsDevelopment() && builder.Configuration.GetValue<bool>("UseMocks", false))
+{
+    app.Logger.LogWarning("Services mocks activés pour le développement");
+}
 
 app.Run();

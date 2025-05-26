@@ -109,5 +109,96 @@
       }
     ]
   },
-  "imports": []
-} 
+  "imports": [
+    {
+      "id": "f9b20a11-83af-4e4f-8fa6-c85fbc5e27d2",
+      "name": "import user 2025",
+      "description": "",
+      "createdBy": "Syst\u00E8me",
+      "configData": {
+        "createMissingOUs": true,
+        "defaultOU": "OU=TEST,DC=adtst01,DC=local",
+        "overwriteExisting": true,
+        "moveObjects": true,
+        "deleteNotInImport": false,
+        "userOptions": {
+          "enabledByDefault": true,
+          "mustChangePassword": true,
+          "defaultPassword": "Temp@Password123",
+          "defaultGroups": []
+        },
+        "csvDelimiter": ";",
+        "headerMapping": {
+          "title": "Eleve",
+          "sAMAccountName": "%prenom%.%nom:uppercase% (%prenom:lowercase%.%nom:lowercase%)",
+          "userPrincipalName": "%prenom:lowercase%.%nom:lowercase%@lycee-ndchallans.com",
+          "mail": "%prenom:lowercase%.%nom:lowercase%@lycee-ndchallans.com",
+          "givenName": "%prenom%",
+          "sn": "%nom:uppercase%",
+          "initials": "%prenom:first%.%nom:first%",
+          "cn": "%prenom%.%nom% (%prenom:lowercase%.%nom:lowercase%)",
+          "personalTitle": "%sex%",
+          "pager": "%datenaissance%",
+          "facsimileTelephoneNumber": "%datenaissance%",
+          "displayName": "%prenom% %nom:uppercase%",
+          "division": "%classe%",
+          "description": "El\u00E8ve de la classe de %classe%",
+          "department": "Eleves / %classe%",
+          "physicalDeliveryOfficeName": "%classe%",
+          "company": "Lyc\u00E9e Notre-Dame",
+          "homeDrive": "P:",
+          "homeDirectory": " \\\\DATAA\\%prenom%.%nom%$"
+        },
+        "requiredFields": [
+          "samAccountName",
+          "givenName",
+          "surname",
+          "path",
+          "Sex",
+          "Nom",
+          "Prenom",
+          "Classe",
+          "Code",
+          "DateNaissance"
+        ],
+        "dryRun": false,
+        "skipErrors": false,
+        "manualColumns": [
+          "sex",
+          "prenom",
+          "nom",
+          "classe",
+          "code",
+          "dateNaissance"
+        ],
+        "ouColumn": "classe"
+      },
+      "createdAt": "2025-03-18T10:00:26.2967464+01:00"
+    }
+  ],
+  "FolderManagementSettings": {
+    "BaseStudentPath": "D:\\Students",
+    "BaseClassGroupPath": "D:\\Classes",
+    "Templates": [
+      {
+        "Name": "StandardStudentTemplate",
+        "Type": "Student",
+        "SubPaths": [
+          "Documents",
+          "Assignments",
+          "Grades",
+          "Personal_Infos_{Id}"
+        ]
+      },
+      {
+        "Name": "StandardClassTemplate",
+        "Type": "ClassGroup",
+        "SubPaths": [
+          "CourseMaterials",
+          "StudentList",
+          "Announcements_{Name}"
+        ]
+      }
+    ]
+  }
+}

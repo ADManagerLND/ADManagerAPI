@@ -1,5 +1,4 @@
 using ADManagerAPI.Models;
-using Microsoft.Extensions.Logging;
 
 namespace ADManagerAPI.Services.Utilities
 {
@@ -15,18 +14,16 @@ namespace ADManagerAPI.Services.Utilities
                     DefaultOU = "DC=domain,DC=local",
                     ManualColumns = new List<string>(),
                     HeaderMapping = new Dictionary<string, string>(),
-                    CsvDelimiter = ";"
+                    CsvDelimiter = ';'
                 };
             }
 
-            // S'assurer que ManualColumns n'est jamais null
             if (config.ManualColumns == null)
             {
                 logger?.LogWarning("config.ManualColumns est null, initialisation d'une liste vide");
                 config.ManualColumns = new List<string>();
             }
 
-            // S'assurer que HeaderMapping n'est jamais null
             if (config.HeaderMapping == null)
             {
                 logger?.LogWarning("config.HeaderMapping est null, initialisation d'un dictionnaire vide");
