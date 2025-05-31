@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
 namespace ADManagerAPI.Models
@@ -5,55 +7,42 @@ namespace ADManagerAPI.Models
     public class ApplicationSettings
     {
         [JsonPropertyName("api")]
-        public ApiSettings Api { get; set; } = new();
+        public ApiSettings Api { get; set; }
 
         [JsonPropertyName("ldap")]
-        public LdapSettings Ldap { get; set; } = new();
+        public LdapSettings Ldap { get; set; }
 
         [JsonPropertyName("userAttributes")]
-        public UserAttributes UserAttributes { get; set; } = new();
+        public UserAttributesConfig UserAttributes { get; set; }
 
         [JsonPropertyName("imports")]
-        public List<SavedImportConfig> Imports { get; set; } = [];
+        public List<SavedImportConfig> Imports { get; set; }
 
         [JsonPropertyName("folderManagement")]
-        public FolderManagementSettings FolderManagement { get; set; } = new();
+        public FolderManagementSettings FolderManagementSettings { get; set; }
 
         [JsonPropertyName("fsrmSettings")]
-        public FsrmSettings Fsrm { get; set; } = new();
+        public FsrmSettings FsrmSettings { get; set; }
+
+        [JsonPropertyName("netBiosDomainName")]
+        public string NetBiosDomainName { get; set; }
+
+        public ApplicationSettings()
+        {
+            Api = new ApiSettings();
+            Ldap = new LdapSettings();
+            UserAttributes = new UserAttributesConfig();
+            Imports = new List<SavedImportConfig>();
+            FolderManagementSettings = new FolderManagementSettings();
+            FsrmSettings = new FsrmSettings();
+            NetBiosDomainName = string.Empty;
+        }
     }
 
     public class ApiSettings
     {
         [JsonPropertyName("apiUrl")]
         public string ApiUrl { get; set; } = "https://api.admanager.local";
-
-        [JsonPropertyName("apiVersion")]
-        public string ApiVersion { get; set; } = "v1";
-
-        [JsonPropertyName("apiTimeout")]
-        public int ApiTimeout { get; set; } = 30;
-
-        [JsonPropertyName("apiRateLimit")]
-        public int ApiRateLimit { get; set; } = 100;
-
-        [JsonPropertyName("enableLogging")]
-        public bool EnableLogging { get; set; } = true;
-
-        [JsonPropertyName("language")]
-        public string Language { get; set; } = "fr";
-        
-        [JsonPropertyName("theme")]
-        public string Theme { get; set; } = "light";
- 
-        [JsonPropertyName("itemsPerPage")]
-        public int ItemsPerPage { get; set; } = 10;
-        
-        [JsonPropertyName("sessionTimeout")]
-        public int SessionTimeout { get; set; } = 30;
-        
-        [JsonPropertyName("enableNotifications")]
-        public bool EnableNotifications { get; set; } = true;
     }
 
     public class LdapSettings
@@ -83,7 +72,7 @@ namespace ADManagerAPI.Models
         public int LdapPageSize { get; set; } = 1000;
     }
 
-    public class UserAttributes
+    public class UserAttributesConfig
     {
         [JsonPropertyName("attributes")]
         public List<AdAttributeDefinition> Attributes { get; set; } = [];

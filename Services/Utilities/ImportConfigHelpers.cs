@@ -29,6 +29,18 @@ namespace ADManagerAPI.Services.Utilities
                 logger?.LogWarning("config.HeaderMapping est null, initialisation d'un dictionnaire vide");
                 config.HeaderMapping = new Dictionary<string, string>();
             }
+            
+            if (config.ClassGroupFolderCreationConfig == null)
+            {
+                logger?.LogWarning("config.ClassGroupFolderCreationConfig est null, initialisation avec des valeurs par défaut implicites.");
+                config.ClassGroupFolderCreationConfig = new ClassGroupFolderCreationConfig();
+            }
+
+            if (config.TeamGroupCreationConfig == null)
+            {
+                logger?.LogWarning("config.TeamGroupCreationConfig est null, initialisation avec des valeurs par défaut implicites.");
+                config.TeamGroupCreationConfig = new TeamGroupCreationConfig();
+            }
 
             return config;
         }

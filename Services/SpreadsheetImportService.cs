@@ -7,43 +7,45 @@ using ADManagerAPI.Models;
 using ADManagerAPI.Services.Interfaces;
 using ADManagerAPI.Services.Parse;
 using ADManagerAPI.Services.Utilities;
-using System.IO;
 
 namespace ADManagerAPI.Services
 {
-    public class CsvManagerService : ICsvManagerService
+    public class SpreadsheetImportService : ISpreadsheetImportService
     {
         private readonly ILdapService _ldapService;
         private readonly ILogService _logService;
-        private readonly ILogger<CsvManagerService> _logger;
+        private readonly ILogger<SpreadsheetImportService> _logger;
         private readonly IServiceScopeFactory _serviceScopeFactory;
+        private readonly IFolderManagementService _folderManagementService;
         
         private readonly IEnumerable<ISpreadsheetParserService> _parsers;
         
         private readonly bool _enableOrphanCleanup = true; // Mettez à false pour désactiver globalement cette fonctionnalité
 
-        public CsvManagerService(
+        public SpreadsheetImportService(
             IEnumerable<ISpreadsheetParserService> parsers,
             ILdapService ldapService, 
             ILogService logService, 
-            ILogger<CsvManagerService> logger,
-            IServiceScopeFactory serviceScopeFactory)
+            ILogger<SpreadsheetImportService> logger,
+            IServiceScopeFactory serviceScopeFactory,
+            IFolderManagementService folderManagementService)
         {
             _parsers           = parsers ?? throw new ArgumentNullException(nameof(parsers));
             _ldapService = ldapService ?? throw new ArgumentNullException(nameof(ldapService));
             _logService = logService ?? throw new ArgumentNullException(nameof(logService));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _serviceScopeFactory = serviceScopeFactory ?? throw new ArgumentNullException(nameof(serviceScopeFactory));
+            _folderManagementService = folderManagementService ?? throw new ArgumentNullException(nameof(folderManagementService));
         }
 
-        #region Analyse du CSV
+        #region Analyse du fichier (CSV/Excel)
 
-        public async Task<CsvAnalysisResult> AnalyzeCsvContentAsync(Stream fileStream, string fileName, ImportConfig config)
+        public async Task<AnalysisResult> AnalyzeSpreadsheetContentAsync(Stream fileStream, string fileName, ImportConfig config)
         {
             if (fileStream == null || fileStream.Length == 0)
             {
                 _logger.LogError("Le flux du fichier est vide ou null");
-                return new CsvAnalysisResult
+                return new AnalysisResult
                 {
                     Success = false,
                     ErrorMessage = "Le fichier fourni est vide ou invalide."
@@ -61,79 +63,80 @@ namespace ADManagerAPI.Services
                 if (parser == null)
                 {
                     _logger.LogError("Aucun service d'analyse de feuille de calcul n'a pu être déterminé.");
-                    return new CsvAnalysisResult
+                    return new AnalysisResult
                     {
                         Success = false,
                         ErrorMessage = "Aucun service d'analyse de feuille de calcul n'a pu être déterminé pour le type de fichier."
                     };
                 }
 
-                var csvData = await parser.ParseAsync(fileStream, fileName, config.CsvDelimiter, config.ManualColumns);
+                var spreadsheetData = await parser.ParseAsync(fileStream, fileName, config.CsvDelimiter, config.ManualColumns);
 
-                if (csvData.Count == 0)
+                if (spreadsheetData.Count == 0)
                 {
-                    _logger.LogError("Aucune donnée valide trouvée dans le fichier CSV");
-                    return new CsvAnalysisResult
+                    _logger.LogError("Aucune donnée valide trouvée dans le fichier.");
+                    return new AnalysisResult
                     {
                         Success = false,
-                        ErrorMessage = "Aucune donnée valide n'a été trouvée dans le fichier CSV."
+                        ErrorMessage = "Aucune donnée valide n'a été trouvée dans le fichier."
                     };
                 }
 
-                CsvDataStore.SetCsvData(csvData);
-                return await AnalyzeCsvDataAsync(csvData, config);
+                FileDataStore.SetCsvData(spreadsheetData);
+                return await AnalyzeSpreadsheetDataAsync(spreadsheetData, config);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"Erreur lors de l'analyse du contenu CSV: {ex.Message}");
-                return new CsvAnalysisResult
+                _logger.LogError(ex, $"Erreur lors de l'analyse du contenu du fichier: {ex.Message}");
+                return new AnalysisResult
                 {
                     Success = false,
-                    ErrorMessage = $"Une erreur est survenue lors de l'analyse du fichier CSV: {ex.Message}"
+                    ErrorMessage = $"Une erreur est survenue lors de l'analyse du fichier: {ex.Message}"
                 };
             }
         }
 
-        public async Task<CsvAnalysisResult> AnalyzeCsvDataAsync(List<Dictionary<string, string>> csvData, ImportConfig config)
+        public async Task<AnalysisResult> AnalyzeSpreadsheetDataAsync(List<Dictionary<string, string>> spreadsheetData, ImportConfig config)
         {
             var stopwatch = Stopwatch.StartNew();
-            _logger.LogInformation("Analyse de données CSV déjà chargées");
+            _logger.LogInformation("Analyse de données de tableur déjà chargées");
 
             try
             {
-                if (csvData == null || csvData.Count == 0)
+                if (spreadsheetData == null || spreadsheetData.Count == 0)
                 {
-                    _logger.LogError("Aucune donnée CSV fournie pour l'analyse");
-                    return new CsvAnalysisResult
+                    _logger.LogError("Aucune donnée de tableur fournie pour l'analyse");
+                    return new AnalysisResult
                     {
                         Success = false,
-                        ErrorMessage = "Aucune donnée CSV n'a été fournie pour l'analyse."
+                        ErrorMessage = "Aucune donnée de tableur n'a été fournie pour l'analyse."
                     };
                 }
 
                 config = ImportConfigHelpers.EnsureValidConfig(config, _logger);
-                var headers = csvData.FirstOrDefault()?.Keys.ToList() ?? new List<string>();
-                var previewData = csvData.Take(10).ToList();
+                var headers = spreadsheetData.FirstOrDefault()?.Keys.ToList() ?? new List<string>();
+                var previewData = spreadsheetData.Take(10).ToList();
 
-                var result = new CsvAnalysisResult
+                var result = new AnalysisResult
                 {
                     Success = true,
-                    CsvData = csvData,
+                    CsvData = spreadsheetData,
                     CsvHeaders = headers,
                     PreviewData = previewData.Select(row => row as object).ToList(),
-                    TableData = csvData,
+                    TableData = spreadsheetData,
                     Errors = new List<string>(),
                     IsValid = true,
                 };
 
-                var analysis = await AnalyzeCsvDataForActionsAsync(csvData, config);
+                var analysis = await AnalyzeSpreadsheetDataForActionsAsync(spreadsheetData, config);
+                _logger.LogInformation($"[SpreadsheetImportService_DEBUG] After awaiting AnalyzeSpreadsheetDataForActionsAsync, 'analysis' object is null: {(analysis == null)}. Action count if not null: {analysis?.Actions?.Count ?? -1}"); // AJOUT DE CE LOG
 
                 if (analysis != null)
                 {
                     result.Analysis = analysis;
                     result.Summary = new
                     {
-                        TotalRows = csvData.Count,
+                        TotalRows = spreadsheetData.Count,
                         ActionsCount = analysis.Actions.Count,
                         CreateCount = analysis.Summary.CreateCount,
                         UpdateCount = analysis.Summary.UpdateCount,
@@ -148,26 +151,26 @@ namespace ADManagerAPI.Services
                 }
 
                 stopwatch.Stop();
-                _logger.LogInformation($"Analyse de données CSV terminée en {stopwatch.ElapsedMilliseconds} ms");
+                _logger.LogInformation($"Analyse de données de tableur terminée en {stopwatch.ElapsedMilliseconds} ms");
                 return result;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"Erreur lors de l'analyse des données CSV: {ex.Message}");
-                return new CsvAnalysisResult
+                _logger.LogError(ex, $"Erreur lors de l'analyse des données de tableur: {ex.Message}");
+                return new AnalysisResult
                 {
                     Success = false,
-                    ErrorMessage = $"Une erreur est survenue lors de l'analyse des données CSV: {ex.Message}"
+                    ErrorMessage = $"Une erreur est survenue lors de l'analyse des données de tableur: {ex.Message}"
                 };
             }
         }
 
-        public async Task<ImportAnalysis> AnalyzeCsvDataForActionsAsync(List<Dictionary<string, string>> csvData, ImportConfig config)
+        public async Task<ImportAnalysis> AnalyzeSpreadsheetDataForActionsAsync(List<Dictionary<string, string>> spreadsheetData, ImportConfig config)
         {
             config = ImportConfigHelpers.EnsureValidConfig(config, _logger);
             var analysis = new ImportAnalysis
             {
-                Summary = new ImportSummary { TotalObjects = csvData.Count },
+                Summary = new ImportSummary { TotalObjects = spreadsheetData.Count },
                 Actions = new List<ImportAction>()
             };
             List<string> scannedOusForOrphanCleanup = new List<string>();
@@ -176,15 +179,14 @@ namespace ADManagerAPI.Services
             {
                 if (ShouldProcessOrganizationalUnits(config))
                 {
-                    await ProcessOrganizationalUnitsAsync(csvData, config, analysis);
+                    await ProcessOrganizationalUnitsAsync(spreadsheetData, config, analysis);
                 }
 
-                await ProcessUsersAsync(csvData, config, analysis);
+                await ProcessUsersAsync(spreadsheetData, config, analysis);
                 
-                if (_enableOrphanCleanup) // Supposition: _enableOrphanCleanup contrôle aussi le nettoyage des OUs vides
+                if (_enableOrphanCleanup)
                 {
-                    scannedOusForOrphanCleanup = await ProcessOrphanedUsersAsync(csvData, config, analysis);
-                    // Après la suppression des utilisateurs, traiter les OUs vides
+                    scannedOusForOrphanCleanup = await ProcessOrphanedUsersAsync(spreadsheetData, config, analysis);
                     await ProcessEmptyOrganizationalUnitsAsync(scannedOusForOrphanCleanup, config, analysis);
                 }
 
@@ -193,7 +195,7 @@ namespace ADManagerAPI.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Erreur lors de l'analyse des données CSV");
+                _logger.LogError(ex, "Erreur lors de l'analyse des données de tableur pour actions");
                 throw;
             }
         }
@@ -203,14 +205,14 @@ namespace ADManagerAPI.Services
             return config.CreateMissingOUs && !string.IsNullOrEmpty(config.ouColumn);
         }
 
-        private async Task ProcessOrganizationalUnitsAsync(List<Dictionary<string, string>> csvData, ImportConfig config, ImportAnalysis analysis)
+        private async Task ProcessOrganizationalUnitsAsync(List<Dictionary<string, string>> spreadsheetData, ImportConfig config, ImportAnalysis analysis)
         {
             _logger.LogInformation($"Analyse des OUs depuis la colonne '{config.ouColumn}'");
             bool defaultOuExists = await EnsureDefaultOuExistsAsync(config, analysis);
 
             if (string.IsNullOrEmpty(config.DefaultOU) || defaultOuExists)
             {
-                var uniqueOuValues = ExtractUniqueOuValues(csvData, config);
+                var uniqueOuValues = ExtractUniqueOuValues(spreadsheetData, config);
                 var existingOus = await GetExistingOusAsync(uniqueOuValues, config);
                 CreateOuActions(uniqueOuValues, existingOus, config, analysis);
             }
@@ -247,21 +249,21 @@ namespace ADManagerAPI.Services
             return ouName.Trim();
         }
 
-        private List<string> ExtractUniqueOuValues(List<Dictionary<string, string>> csvData, ImportConfig config)
+        private List<string> ExtractUniqueOuValues(List<Dictionary<string, string>> spreadsheetData, ImportConfig config)
         {
             _logger.LogDebug("[OU_DEBUG] Début de ExtractUniqueOuValues.");
-            var extractedValues = csvData
+            var extractedValues = spreadsheetData
                 .Where(row => row.ContainsKey(config.ouColumn) && !string.IsNullOrEmpty(row[config.ouColumn]))
                 .Select(row => {
                     var rawValue = row[config.ouColumn];
                     var trimmedValue = rawValue.Trim();
-                    _logger.LogTrace($"[OU_DEBUG] Valeur OU brute du CSV: '{rawValue}', après Trim: '{trimmedValue}'");
+                    _logger.LogTrace($"[OU_DEBUG] Valeur OU brute du fichier: '{rawValue}', après Trim: '{trimmedValue}'");
                     return trimmedValue;
                 })
                 .Where(trimmedValue => !string.IsNullOrEmpty(trimmedValue))
                 .Distinct(StringComparer.OrdinalIgnoreCase) 
                 .ToList();
-            _logger.LogInformation($"[OU_DEBUG] {extractedValues.Count} valeurs d'OU uniques (insensible à la casse, après Trim) extraites du CSV: {JsonSerializer.Serialize(extractedValues)}");
+            _logger.LogInformation($"[OU_DEBUG] {extractedValues.Count} valeurs d'OU uniques (insensible à la casse, après Trim) extraites du fichier: {JsonSerializer.Serialize(extractedValues)}");
             return extractedValues;
         }
 
@@ -396,22 +398,26 @@ namespace ADManagerAPI.Services
             return ouPath.Substring(firstComma + 1).Trim();
         }
 
-        private async Task ProcessUsersAsync(List<Dictionary<string, string>> csvData, ImportConfig config, ImportAnalysis analysis)
+        private async Task ProcessUsersAsync(List<Dictionary<string, string>> spreadsheetData, ImportConfig config, ImportAnalysis analysis)
         {
             var ousToBeCreated = new HashSet<string>(
                 analysis.Actions.Where(a => a.ActionType == ActionType.CREATE_OU).Select(a => a.Path),
                 StringComparer.OrdinalIgnoreCase
             );
-            var knownExistingOuPathsCache = new HashSet<string>(StringComparer.OrdinalIgnoreCase); // Cache pour les OUs dont l'existence est confirmée
+            var knownExistingOuPathsCache = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (var row in csvData)
-                await ProcessUserRowAsync(row, config, analysis, ousToBeCreated, knownExistingOuPathsCache); // Passer le nouveau cache
+            foreach (var row in spreadsheetData)
+                await ProcessUserRowAsync(row, config, analysis, ousToBeCreated, knownExistingOuPathsCache);
         }
 
         private async Task ProcessUserRowAsync(Dictionary<string, string> row, ImportConfig config, ImportAnalysis analysis, HashSet<string> ousToBeCreated, HashSet<string> knownExistingOuPathsCache)
         {
             var mappedRow = MapRow(row, config);
             string? samAccountName = mappedRow.GetValueOrDefault("sAMAccountName");
+
+            // NOUVEAU LOG AJOUTÉ ICI
+            _logger.LogInformation($"[SAM_DEBUG] Dans ProcessUserRowAsync, sAMAccountName obtenu depuis mappedRow: '{samAccountName}' (avant Split).");
+
             if (string.IsNullOrEmpty(samAccountName))
             {
                 analysis.Actions.Add(new ImportAction
@@ -419,7 +425,7 @@ namespace ADManagerAPI.Services
                     ActionType = ActionType.ERROR,
                     ObjectName = "Unknown",
                     Path = config.DefaultOU,
-                    Message = "samAccountName manquant dans les données mappées",
+                    Message = "samAccountName manquant dans les données mappées pour une ligne.",
                     Attributes = row
                 });
                 return;
@@ -431,19 +437,17 @@ namespace ADManagerAPI.Services
 
             if (string.IsNullOrEmpty(ouPath))
             {
-                ouExists = true; // L'utilisateur sera dans l'OU par défaut (ou racine si DefaultOU est vide)
+                ouExists = true; 
                 existenceDetermined = true;
             }
             else
             {
-                // 1. L'OU est-elle déjà planifiée pour création ? Si oui, elle "existera" pour cet utilisateur.
                 if (ousToBeCreated.Contains(ouPath))
                 {
                     ouExists = true;
                     existenceDetermined = true;
                     _logger.LogDebug($"[CACHE_OU_LOGIC] OU '{ouPath}' planifiée pour création. Utilisateur: '{samAccountName}'.");
                 }
-                // 2. Sinon, l'OU est-elle dans notre cache d'OUs déjà vérifiées comme existantes ?
                 else if (knownExistingOuPathsCache.Contains(ouPath))
                 {
                     ouExists = true;
@@ -451,14 +455,13 @@ namespace ADManagerAPI.Services
                     _logger.LogDebug($"[CACHE_OU_LOGIC] OU '{ouPath}' trouvée dans cache existance. Utilisateur: '{samAccountName}'.");
                 }
             }
-
-            if (!existenceDetermined && !string.IsNullOrEmpty(ouPath)) // Si non encore déterminée et ouPath valide, vérifier dans l'AD
+            if (!existenceDetermined && !string.IsNullOrEmpty(ouPath))
             {
                 _logger.LogDebug($"[CACHE_OU_LOGIC] OU '{ouPath}' ni planifiée, ni en cache existance. Vérification AD. Utilisateur: '{samAccountName}'.");
                 ouExists = await CheckOrganizationalUnitExistsAsync(ouPath);
                 if (ouExists)
                 {
-                    knownExistingOuPathsCache.Add(ouPath); // Ajouter au cache si elle existe
+                    knownExistingOuPathsCache.Add(ouPath); 
                     _logger.LogDebug($"[CACHE_OU_LOGIC] OU '{ouPath}' existe dans l'AD (ajoutée au cache).");
                 }
                 else
@@ -466,14 +469,8 @@ namespace ADManagerAPI.Services
                     _logger.LogDebug($"[CACHE_OU_LOGIC] OU '{ouPath}' N'EXISTE PAS dans l'AD.");
                 }
             }
-
             if (!ouExists && config.CreateMissingOUs && !string.IsNullOrEmpty(ouPath))
             {
-                // Remplacer la vérification existante :
-                // bool createOuActionAlreadyExists = analysis.Actions.Any(a => 
-                // a.ActionType == ActionType.CREATE_OU && 
-                // string.Equals(a.Path, ouPath, StringComparison.OrdinalIgnoreCase));
-                // par une vérification directe dans ousToBeCreated:
                 if (!ousToBeCreated.Contains(ouPath))
                 {
                     string objectNameForOuAction = ExtractOuName(ouPath); 
@@ -486,7 +483,7 @@ namespace ADManagerAPI.Services
                         Message = $"Création de l'unité organisationnelle '{objectNameForOuAction}' (requise pour l'utilisateur '{samAccountName}')",
                         Attributes = new Dictionary<string, string>()
                     });
-                    ousToBeCreated.Add(ouPath); // S'assurer que l'OU est marquée comme planifiée pour création
+                    ousToBeCreated.Add(ouPath); 
                 }
                 else
                 {
@@ -494,37 +491,197 @@ namespace ADManagerAPI.Services
                 }
                 ouExists = true; 
             }
-
             if (!ouExists)
             {
                 _logger.LogWarning($"L'OU '{ouPath}' n'existe pas et ne sera pas créée. Utilisation de l'OU par défaut pour l'utilisateur '{samAccountName}'");
                 ouPath = config.DefaultOU;
             }
             
-            samAccountName = samAccountName.Split('(')[0].Trim();
+            string cleanedSamAccountName = samAccountName.Split('(')[0].Trim();
+             // NOUVEAU LOG AJOUTÉ ICI
+            _logger.LogInformation($"[SAM_DEBUG] Dans ProcessUserRowAsync, cleanedSamAccountName: '{cleanedSamAccountName}' (après Split et Trim).");
 
-            var userExists = await _ldapService.UserExistsAsync(samAccountName);
-            if (!userExists)
+            // Nouvelle section pour dédupliquer cleanedSamAccountName
+            if (!string.IsNullOrEmpty(cleanedSamAccountName) && cleanedSamAccountName.Length > 0 && cleanedSamAccountName.Length % 2 == 0)
             {
-                analysis.Actions.Add(new ImportAction
+                int half = cleanedSamAccountName.Length / 2;
+                string firstHalf = cleanedSamAccountName.Substring(0, half);
+                string secondHalf = cleanedSamAccountName.Substring(half);
+                if (firstHalf.Equals(secondHalf, StringComparison.OrdinalIgnoreCase))
                 {
-                    ActionType = ActionType.CREATE_USER,
-                    ObjectName = samAccountName,
-                    Path = ouPath,
-                    Message = "Création d'un nouvel utilisateur",
-                    Attributes = mappedRow
-                });
+                    _logger.LogWarning($"[SPREADSHEET_HEURISTIC] cleanedSamAccountName '{cleanedSamAccountName}' dans SpreadsheetImportService semble dupliqué. Utilisation du premier moitié '{firstHalf}'.");
+                    cleanedSamAccountName = firstHalf;
+                    _logger.LogInformation($"[SAM_DEBUG] cleanedSamAccountName après heuristique dans SpreadsheetImportService: '{cleanedSamAccountName}'.");
+                }
             }
-            else
+            // Fin de la nouvelle section
+
+            var userExists = await _ldapService.UserExistsAsync(cleanedSamAccountName);
+            ActionType userActionType = userExists ? ActionType.UPDATE_USER : ActionType.CREATE_USER;
+            string userActionMessage = userExists ? "Mise à jour d'un utilisateur existant" : "Création d'un nouvel utilisateur";
+
+            // Ensure user attributes are a fresh dictionary for this action
+            var userAttributes = new Dictionary<string, string>(mappedRow);
+
+            analysis.Actions.Add(new ImportAction
             {
-                analysis.Actions.Add(new ImportAction
+                ActionType = userActionType,
+                ObjectName = cleanedSamAccountName,
+                Path = ouPath,
+                Message = userActionMessage,
+                Attributes = userAttributes 
+            });
+            _logger.LogInformation($"Added {userActionType} action for user {cleanedSamAccountName} in OU {ouPath}");
+
+
+            // --- BEGIN SECTION FOR PROVISIONING USER SHARE ---
+            if (config.Folders != null && config.Folders.EnableShareProvisioning)
+            {
+                _logger.LogInformation($"Vérification de la configuration pour le provisionnement du partage utilisateur pour {cleanedSamAccountName}.");
+                string? serverName = config.Folders.TargetServerName;
+                // string? baseNtfsPath = config.Folders.ShareNameForUserFolders; // ANCIENNE LOGIQUE, incorrecte
+                string? localPathOnServer = config.Folders.LocalPathForUserShareOnServer; // NOUVEAU: ex C:\Data\Eleves
+                string? shareNameForUserDirs = config.Folders.ShareNameForUserFolders;    // NOUVEAU: ex "Eleves"
+                string? netbiosDomainName = config.NetBiosDomainName; 
+                List<string> subfoldersForShare = config.Folders.DefaultShareSubfolders ?? new List<string>();
+
+                if (string.IsNullOrWhiteSpace(serverName))
                 {
-                    ActionType = ActionType.UPDATE_USER,
-                    ObjectName = samAccountName,
-                    Path = ouPath,
-                    Message = "Mise à jour d'un utilisateur existant",
-                    Attributes = mappedRow
-                });
+                    _logger.LogWarning($"TargetServerName n'est pas configuré dans config.Folders. Le provisionnement du partage utilisateur pour {cleanedSamAccountName} est ignoré.");
+                }
+                // else if (string.IsNullOrWhiteSpace(baseNtfsPath)) // ANCIENNE VERIFICATION
+                // {
+                //    _logger.LogWarning($"BaseNtfsPath n'est pas configuré dans config.Folders. Le provisionnement du partage utilisateur pour {cleanedSamAccountName} est ignoré.");
+                // }
+                else if (string.IsNullOrWhiteSpace(localPathOnServer))
+                {
+                    _logger.LogWarning($"LocalPathForUserShareOnServer n'est pas configuré dans config.Folders. Le provisionnement du partage utilisateur pour {cleanedSamAccountName} est ignoré.");
+                }
+                else if (string.IsNullOrWhiteSpace(shareNameForUserDirs))
+                {
+                    _logger.LogWarning($"ShareNameForUserFolders n'est pas configuré dans config.Folders. Le provisionnement du partage utilisateur pour {cleanedSamAccountName} est ignoré.");
+                }
+                else if (string.IsNullOrWhiteSpace(netbiosDomainName))
+                {
+                    _logger.LogWarning($"NetBiosDomainName n'est pas configuré dans config. Le provisionnement du partage utilisateur pour {cleanedSamAccountName} est ignoré.");
+                }
+                else
+                {
+                    string accountAd = $"{netbiosDomainName}\\{cleanedSamAccountName}";
+                    // string userSharePath = System.IO.Path.Combine(baseNtfsPath, cleanedSamAccountName); // ANCIEN: le chemin physique est construit DANS FolderManagementService
+                    string individualShareName = cleanedSamAccountName + "$"; // Le nom du partage individuel (ex: jdupont$)
+
+                    var shareAttributes = new Dictionary<string, string>(mappedRow) 
+                    {
+                        ["ServerName"] = serverName,
+                        // ["BaseNtfsPath"] = baseNtfsPath, // ANCIEN
+                        ["LocalPathForUserShareOnServer"] = localPathOnServer,     // NOUVEAU
+                        ["ShareNameForUserFolders"] = shareNameForUserDirs,        // NOUVEAU
+                        ["AccountAd"] = accountAd,
+                        ["Subfolders"] = System.Text.Json.JsonSerializer.Serialize(subfoldersForShare),
+                        // ["UserSharePath"] = userSharePath, // Info, plus pertinent de le construire dans FMS
+                        ["IndividualShareName"] = individualShareName // Nom du partage individuel SMB
+                    };
+
+                    analysis.Actions.Add(new ImportAction
+                    {
+                        ActionType = ActionType.PROVISION_USER_SHARE, 
+                        ObjectName = individualShareName, // Utiliser le nom du partage individuel comme ObjectName
+                        Path = localPathOnServer, // Chemin physique de base sur le serveur où les dossiers seront créés (ex: C:\Data\Eleves)
+                        Message = $"Préparation du provisionnement du partage utilisateur '{individualShareName}' pour '{accountAd}' sur '{serverName}'. Partage principal: '{shareNameForUserDirs}'.",
+                        Attributes = shareAttributes
+                    });
+                    _logger.LogInformation($"Ajout de l'action PROVISION_USER_SHARE pour '{accountAd}' (partage individuel : '{individualShareName}', basé sur '{shareNameForUserDirs}').");
+                }
+            }
+            // --- END SECTION FOR PROVISIONING USER SHARE ---
+
+            // Logic for creating class group folder actions
+            if (config.ClassGroupFolderCreationConfig != null)
+            {
+                string shouldCreateClassGroupFolderVal = mappedRow.GetValueOrDefault(config.ClassGroupFolderCreationConfig.CreateClassGroupFolderColumnName ?? "CreateClassGroupFolder");
+                if (bool.TryParse(shouldCreateClassGroupFolderVal, out bool createClassGroupFolder) && createClassGroupFolder)
+                {
+                    string? classGroupId = mappedRow.GetValueOrDefault(config.ClassGroupFolderCreationConfig.ClassGroupIdColumnName ?? "ClassGroupId");
+                    string? classGroupName = mappedRow.GetValueOrDefault(config.ClassGroupFolderCreationConfig.ClassGroupNameColumnName ?? "ClassGroupName");
+                    string classGroupTemplateName = mappedRow.GetValueOrDefault(config.ClassGroupFolderCreationConfig.ClassGroupTemplateNameColumnName ?? "ClassGroupTemplateName", "DefaultClassGroupTemplate"); // Default template name
+
+                    if (!string.IsNullOrWhiteSpace(classGroupId) && !string.IsNullOrWhiteSpace(classGroupName))
+                    {
+                        var classGroupFolderAttributes = new Dictionary<string, string>(mappedRow)
+                        {
+                            ["Id"] = classGroupId,
+                            ["Name"] = classGroupName,
+                            ["TemplateName"] = classGroupTemplateName
+                        };
+
+                        analysis.Actions.Add(new ImportAction
+                        {
+                            ActionType = ActionType.CREATE_CLASS_GROUP_FOLDER,
+                            ObjectName = classGroupName,
+                            Path = "", // Path for class group folder is determined by FolderManagementService
+                            Message = $"Préparation de la création du dossier pour le groupe de classes {classGroupName} (Modèle: {classGroupTemplateName})",
+                            Attributes = classGroupFolderAttributes
+                        });
+                        _logger.LogInformation($"Added CREATE_CLASS_GROUP_FOLDER action for {classGroupName}");
+                    }
+                    else
+                    {
+                        _logger.LogWarning($"Skipping CREATE_CLASS_GROUP_FOLDER for {cleanedSamAccountName} due to missing/invalid data: Id='{classGroupId}', Name='{classGroupName}', Template='{classGroupTemplateName}'. " +
+                                           $"Ensure columns '{(config.ClassGroupFolderCreationConfig.ClassGroupIdColumnName ?? "ClassGroupId")}', " +
+                                           $"'{(config.ClassGroupFolderCreationConfig.ClassGroupNameColumnName ?? "ClassGroupName")}', " +
+                                           $"'{(config.ClassGroupFolderCreationConfig.ClassGroupTemplateNameColumnName ?? "ClassGroupTemplateName")}' are correctly mapped and populated.");
+                    }
+                }
+            }
+            
+            // Logic for creating Team group actions (placeholder)
+            if (config.TeamGroupCreationConfig != null)
+            {
+                string shouldCreateTeamGroupVal = mappedRow.GetValueOrDefault(config.TeamGroupCreationConfig.CreateTeamGroupColumnName ?? "CreateTeamGroup");
+                if (bool.TryParse(shouldCreateTeamGroupVal, out bool createTeamGroup) && createTeamGroup)
+                {
+                    string? teamGroupName = mappedRow.GetValueOrDefault(config.TeamGroupCreationConfig.TeamGroupNameColumnName ?? "TeamGroupName");
+                    // Potentially more attributes like TeamOwners, TeamMembers, TemplateType etc.
+
+                    if (!string.IsNullOrWhiteSpace(teamGroupName))
+                    {
+                        var teamGroupAttributes = new Dictionary<string, string>(mappedRow)
+                        {
+                            ["Name"] = teamGroupName
+                            // Add other relevant attributes from mappedRow or defaults
+                        };
+
+                        analysis.Actions.Add(new ImportAction
+                        {
+                            ActionType = ActionType.CREATE_TEAM_GROUP,
+                            ObjectName = teamGroupName,
+                            Path = "", // Path/ID for Team groups might be handled differently or not applicable
+                            Message = $"Préparation de la création du groupe Teams: {teamGroupName}",
+                            Attributes = teamGroupAttributes 
+                        });
+                        _logger.LogInformation($"Added CREATE_TEAM_GROUP action for {teamGroupName}. (Note: Execution logic is a placeholder).");
+                    }
+                    else
+                    {
+                         _logger.LogWarning($"Skipping CREATE_TEAM_GROUP for {cleanedSamAccountName} due to missing/invalid TeamGroupName. "+
+                                           $"Ensure column '{(config.TeamGroupCreationConfig.TeamGroupNameColumnName ?? "TeamGroupName")}' is correctly mapped and populated.");
+                    }
+                }
+            }
+            // --- END SECTION FOR ADDING FOLDER AND TEAM ACTIONS ---
+
+            // Si aucune action n'a été générée pour cet utilisateur (création/màj/déplacement), on logue un skip
+            bool actionGeneratedForUser = false;
+            if (userActionType == ActionType.CREATE_USER || userActionType == ActionType.UPDATE_USER || userActionType == ActionType.MOVE_USER)
+            {
+                actionGeneratedForUser = true;
+            }
+
+            if (!actionGeneratedForUser)
+            {
+                _logger.LogWarning($"Aucune action générée pour l'utilisateur {cleanedSamAccountName}. Utilisation de l'OU par défaut pour l'utilisateur.");
+                ouPath = config.DefaultOU;
             }
         }
 
@@ -541,50 +698,54 @@ namespace ADManagerAPI.Services
             analysis.Summary.CreateCount = analysis.Actions.Count(a => a.ActionType == ActionType.CREATE_USER);
             analysis.Summary.UpdateCount = analysis.Actions.Count(a => a.ActionType == ActionType.UPDATE_USER);
             analysis.Summary.DeleteCount = analysis.Actions.Count(a => a.ActionType == ActionType.DELETE_USER);
-            analysis.Summary.ErrorCount = analysis.Actions.Count(a => a.ActionType == ActionType.ERROR);
             analysis.Summary.CreateOUCount = analysis.Actions.Count(a => a.ActionType == ActionType.CREATE_OU);
             analysis.Summary.DeleteOUCount = analysis.Actions.Count(a => a.ActionType == ActionType.DELETE_OU);
             analysis.Summary.MoveCount = analysis.Actions.Count(a => a.ActionType == ActionType.MOVE_USER);
+            analysis.Summary.CreateStudentFolderCount = analysis.Actions.Count(a => a.ActionType == ActionType.CREATE_STUDENT_FOLDER);
+            analysis.Summary.CreateClassGroupFolderCount = analysis.Actions.Count(a => a.ActionType == ActionType.CREATE_CLASS_GROUP_FOLDER);
+            analysis.Summary.CreateTeamGroupCount = analysis.Actions.Count(a => a.ActionType == ActionType.CREATE_TEAM_GROUP);
+            analysis.Summary.ProvisionUserShareCount = analysis.Actions.Count(a => a.ActionType == ActionType.PROVISION_USER_SHARE); // Ajout
         }
 
         #endregion
 
-        #region Import du CSV
+        #region Import du fichier
 
-        public async Task<ImportResult> ExecuteImportFromDataAsync(List<Dictionary<string, string>> csvData, ImportConfig config, string? connectionId = null)
+        public async Task<ImportResult> ExecuteImportFromAnalysisAsync(ImportAnalysis analysis, ImportConfig config, string? connectionId = null)
         {
             var sw = Stopwatch.StartNew();
-            _logger.LogInformation("Début de l'import depuis les données CSV");
+            _logger.LogInformation("Début de l'import depuis une analyse existante.");
 
             try
             {
-                config = ImportConfigHelpers.EnsureValidConfig(config, _logger);
-                var analysis = await AnalyzeCsvDataForActionsAsync(csvData, config);
+                // config = ImportConfigHelpers.EnsureValidConfig(config, _logger); // Config should already be valid if analysis was done with it.
 
                 if (analysis == null || analysis.Actions == null || !analysis.Actions.Any())
                 {
-                    _logger.LogWarning("Aucune action générée pour l'import");
+                    _logger.LogWarning("Aucune action fournie dans l'objet ImportAnalysis pour l'import.");
                     return new ImportResult
                     {
                         Success = false,
-                        Summary = new ImportSummary { TotalObjects = csvData.Count },
+                        Summary = analysis?.Summary ?? new ImportSummary { TotalObjects = 0 },
                         ActionResults = new List<ImportActionResult>
                         { 
                             new ImportActionResult 
                             { 
                                 Success = false, 
-                                Message = "Aucune action générée pour l'import."
+                                Message = "Aucune action fournie dans l'objet ImportAnalysis."
                             }
                         },
-                        Details = "Aucune action générée pour l'import."
+                        Details = "Aucune action fournie dans l'objet ImportAnalysis."
                     };
                 }
 
-                return await ExecuteImport(analysis.Actions, config, connectionId);
+                // La configuration d'import est déjà appliquée lors de la phase d'analyse qui a produit l'objet 'analysis'.
+                // On peut donc directement utiliser analysis.Actions.
+                return await ExecuteImport(analysis.Actions, config, connectionId); 
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Erreur lors de l'import depuis les données CSV");
+                _logger.LogError(ex, "Erreur lors de l'import depuis une analyse existante.");
                 return new ImportResult
                 {
                     Success = false,
@@ -597,17 +758,17 @@ namespace ADManagerAPI.Services
                         }
                     },
                     Details = $"Erreur lors de l'import: {ex.Message}",
-                    Summary = new ImportSummary { ErrorCount = 1 }
+                    Summary = analysis?.Summary ?? new ImportSummary { ErrorCount = 1 }
                 };
             }
             finally
             {
                 sw.Stop();
-                _logger.LogInformation($"Import terminé en {sw.ElapsedMilliseconds} ms");
+                _logger.LogInformation($"Import depuis analyse terminé en {sw.ElapsedMilliseconds} ms");
             }
         }
         
-        public async Task<ImportResult> ExecuteImportFromActionsAsync(List<Dictionary<string, string>> csvData, ImportConfig config, List<LegacyImportActionItem> actions, string? connectionId = null)
+        public async Task<ImportResult> ExecuteImportFromActionsAsync(List<Dictionary<string, string>> spreadsheetData, ImportConfig config, List<LegacyImportActionItem> actions, string? connectionId = null)
         {
             _logger.LogInformation("Début de l'exécution de l'import à partir des actions");
             
@@ -745,9 +906,13 @@ namespace ADManagerAPI.Services
                     ActionType.CREATE_OU,
                     ActionType.CREATE_USER,
                     ActionType.UPDATE_USER,
-                    ActionType.MOVE_USER, // Même si non implémenté, garder sa place logique
+                    ActionType.CREATE_STUDENT_FOLDER,
+                    ActionType.CREATE_CLASS_GROUP_FOLDER,
+                    ActionType.CREATE_TEAM_GROUP,
+                    ActionType.PROVISION_USER_SHARE, // Ajout pour traitement séquentiel
+                    ActionType.MOVE_USER,
                     ActionType.DELETE_USER,
-                    ActionType.DELETE_OU // Traiter la suppression des OUs en dernier
+                    ActionType.DELETE_OU
                 };
 
                 int totalActions = actions.Count;
@@ -763,7 +928,9 @@ namespace ADManagerAPI.Services
                     _logger.LogInformation($"Traitement de {actionsOfType.Count} actions de type {actionTypeToProcess}.");
 
                     // Traitement séquentiel pour CREATE_OU et DELETE_OU
-                    if (actionTypeToProcess == ActionType.CREATE_OU || actionTypeToProcess == ActionType.DELETE_OU)
+                    if (actionTypeToProcess == ActionType.CREATE_OU || actionTypeToProcess == ActionType.DELETE_OU ||
+                        actionTypeToProcess == ActionType.CREATE_STUDENT_FOLDER || actionTypeToProcess == ActionType.CREATE_CLASS_GROUP_FOLDER ||
+                        actionTypeToProcess == ActionType.CREATE_TEAM_GROUP)
                     {
                         foreach (var action in actionsOfType)
                         {
@@ -807,6 +974,10 @@ namespace ADManagerAPI.Services
                 result.Summary.ErrorCount = result.ActionResults.Count(ar => !ar.Success);
                 result.Summary.CreateOUCount = result.ActionResults.Count(ar => ar.ActionType == ActionType.CREATE_OU && ar.Success);
                 result.Summary.DeleteOUCount = result.ActionResults.Count(ar => ar.ActionType == ActionType.DELETE_OU && ar.Success);
+                result.Summary.CreateStudentFolderCount = result.ActionResults.Count(ar => ar.ActionType == ActionType.CREATE_STUDENT_FOLDER && ar.Success);
+                result.Summary.CreateClassGroupFolderCount = result.ActionResults.Count(ar => ar.ActionType == ActionType.CREATE_CLASS_GROUP_FOLDER && ar.Success);
+                result.Summary.CreateTeamGroupCount = result.ActionResults.Count(ar => ar.ActionType == ActionType.CREATE_TEAM_GROUP && ar.Success);
+                result.Summary.ProvisionUserShareCount = result.ActionResults.Count(ar => ar.ActionType == ActionType.PROVISION_USER_SHARE && ar.Success); // Ajout
                 
                 result.Summary.TotalObjects = actions.Count; // Nombre total d'actions planifiées
                 result.Summary.ProcessedCount = processedActions; // Nombre d'actions effectivement tentées
@@ -825,7 +996,7 @@ namespace ADManagerAPI.Services
                         connectionId,
                         100,
                         result.Success ? "completed" : "completed_with_errors",
-                        $"Import terminé avec {result.Summary.CreateCount} créations, {result.Summary.UpdateCount} mises à jour, {result.Summary.DeleteCount} suppressions et {result.Summary.ErrorCount} erreurs",
+                        $"Import terminé avec {result.Summary.CreateCount} créations, {result.Summary.UpdateCount} mises à jour, {result.Summary.DeleteCount} suppressions, {result.Summary.CreateStudentFolderCount} dossiers étudiants créés, {result.Summary.CreateClassGroupFolderCount} dossiers groupes créés, {result.Summary.CreateTeamGroupCount} groupes Teams créés, {result.Summary.ProvisionUserShareCount} partages utilisateurs provisionnés et {result.Summary.ErrorCount} erreurs", // Ajout au message
                         new ImportAnalysis { Summary = result.Summary }
                     );
                 }
@@ -874,11 +1045,13 @@ namespace ADManagerAPI.Services
                     case ActionType.MOVE_USER:
                         currentImportResult.MovedCount++;
                         break;
-                    case ActionType.CREATE_OU:
-                        // CreateOUCount est déjà géré dans le résumé final, ici on ne met à jour que le Summary du ImportResult global si besoin
+                    case ActionType.CREATE_STUDENT_FOLDER:
                         break;
-                    case ActionType.DELETE_OU:
-                        // DeleteOUCount sera aussi géré dans le résumé final
+                    case ActionType.CREATE_CLASS_GROUP_FOLDER:
+                        break;
+                    case ActionType.CREATE_TEAM_GROUP:
+                        break;
+                    case ActionType.PROVISION_USER_SHARE: // Ajout
                         break;
                 }
             }
@@ -888,20 +1061,26 @@ namespace ADManagerAPI.Services
                 int progressPercentage = (int)((processedCount * 100.0) / totalCount);
                 string message = $"Traitement: {action.ActionType} pour {action.ObjectName} - {processedCount}/{totalCount}";
 
+                var summaryForProgress = new ImportSummary
+                {
+                    TotalObjects = totalCount,
+                    CreateCount = currentImportResult.CreatedCount,
+                    UpdateCount = currentImportResult.UpdatedCount,
+                    DeleteCount = currentImportResult.DeletedCount,
+                    MoveCount = currentImportResult.MovedCount,
+                    ErrorCount = currentImportResult.ActionResults.Count(ar => !ar.Success),
+                    CreateOUCount = currentImportResult.ActionResults.Count(ar => ar.ActionType == ActionType.CREATE_OU && ar.Success),
+                    DeleteOUCount = currentImportResult.ActionResults.Count(ar => ar.ActionType == ActionType.DELETE_OU && ar.Success),
+                    CreateStudentFolderCount = currentImportResult.ActionResults.Count(ar => ar.ActionType == ActionType.CREATE_STUDENT_FOLDER && ar.Success),
+                    CreateClassGroupFolderCount = currentImportResult.ActionResults.Count(ar => ar.ActionType == ActionType.CREATE_CLASS_GROUP_FOLDER && ar.Success),
+                    CreateTeamGroupCount = currentImportResult.ActionResults.Count(ar => ar.ActionType == ActionType.CREATE_TEAM_GROUP && ar.Success),
+                    ProvisionUserShareCount = currentImportResult.ActionResults.Count(ar => ar.ActionType == ActionType.PROVISION_USER_SHARE && ar.Success), // Ajout
+                    ProcessedCount = processedCount
+                };
+                
                 var currentAnalysisForProgress = new ImportAnalysis
                 {
-                    Summary = new ImportSummary
-                    {
-                        TotalObjects = totalCount,
-                        CreateCount = currentImportResult.CreatedCount,
-                        UpdateCount = currentImportResult.UpdatedCount,
-                        DeleteCount = currentImportResult.DeletedCount,
-                        MoveCount = currentImportResult.MovedCount,
-                        ErrorCount = currentImportResult.ErrorCount,
-                        CreateOUCount = currentImportResult.ActionResults.Count(ar => ar.ActionType == ActionType.CREATE_OU && ar.Success), // Recalculer pour la progression
-                        DeleteOUCount = currentImportResult.ActionResults.Count(ar => ar.ActionType == ActionType.DELETE_OU && ar.Success),
-                        ProcessedCount = processedCount
-                    }
+                    Summary = summaryForProgress
                 };
 
                 signalRService.SendCsvAnalysisProgressAsync(
@@ -910,7 +1089,7 @@ namespace ADManagerAPI.Services
                     currentPhase,
                     message,
                     currentAnalysisForProgress
-                ).GetAwaiter().GetResult(); // .Wait() ou .GetAwaiter().GetResult() dans un contexte non-async
+                ).GetAwaiter().GetResult();
             }
         }
 
@@ -1016,8 +1195,95 @@ namespace ADManagerAPI.Services
                         _logger.LogWarning("L'action MOVE_USER n'est pas encore pleinement implémentée dans ExecuteImportActionAsync.");
                         break;
                     case ActionType.DELETE_OU:
-                        await Task.Run(() => _ldapService.DeleteOrganizationalUnitAsync(action.Path));
-                        actionResult.Message = $"Suppression de l'unité organisationnelle {action.ObjectName} ({action.Path}) effectuée";
+                        // await Task.Run(() => _ldapService.DeleteOrganizationalUnitAsync(action.Path)); // Ancien appel
+                        bool ouDeleted = await _ldapService.DeleteOrganizationalUnitAsync(action.Path, false); // `deleteIfNotEmpty` mis à false par défaut
+                        if (ouDeleted)
+                        {
+                            actionResult.Success = true;
+                            actionResult.Message = $"Suppression de l'unité organisationnelle {action.ObjectName} ({action.Path}) effectuée.";
+                        }
+                        else
+                        {
+                            actionResult.Success = false;
+                            actionResult.Message = $"Échec de la suppression de l'OU {action.ObjectName} ({action.Path}). Elle n'est probablement pas vide ou une autre erreur s'est produite (voir logs LdapService).";
+                            _logger.LogWarning($"Tentative de suppression de l'OU {action.Path} pour l'objet {action.ObjectName} a échoué (probablement non vide ou autre erreur LdapService).");
+                        }
+                        break;
+                    case ActionType.CREATE_STUDENT_FOLDER:
+                        _logger.LogInformation($"Attempting to create student folder for: {action.ObjectName}");
+                        if (action.Attributes.TryGetValue("UserRole", out var roleStr) && Enum.TryParse<UserRole>(roleStr, true, out var userRole))
+                        {
+                            var studentInfo = new StudentInfo { 
+                                Id = action.Attributes.GetValueOrDefault("Id", action.ObjectName), 
+                                Name = action.Attributes.GetValueOrDefault("Name", action.ObjectName) 
+                            };
+                            // TODO: Determine the correct templateName. Using a placeholder for now.
+                            string studentTemplateName = action.Attributes.GetValueOrDefault("TemplateName", "DefaultStudentTemplate"); 
+                            await _folderManagementService.CreateStudentFolderAsync(studentInfo, studentTemplateName, userRole);
+                            actionResult.Success = true;
+                            actionResult.Message = $"Création du dossier étudiant pour {action.ObjectName} effectuée (modèle: {studentTemplateName}).";
+                        }
+                        else
+                        {
+                            actionResult.Success = false;
+                            actionResult.Message = $"UserRole manquant ou invalide pour la création du dossier étudiant {action.ObjectName}. Attributs: {JsonSerializer.Serialize(action.Attributes)}";
+                            _logger.LogWarning(actionResult.Message);
+                        }
+                        break;
+                    case ActionType.CREATE_CLASS_GROUP_FOLDER:
+                        _logger.LogInformation($"Attempting to create class group folder for: {action.ObjectName}");
+                        var classGroupInfo = new ClassGroupInfo { 
+                            Id = action.Attributes.GetValueOrDefault("Id", action.ObjectName), 
+                            Name = action.Attributes.GetValueOrDefault("Name", action.ObjectName) 
+                        };
+                        // TODO: Determine the correct templateName. Using a placeholder for now.
+                        string classGroupTemplateName = action.Attributes.GetValueOrDefault("TemplateName", "DefaultClassGroupTemplate");
+                        await _folderManagementService.CreateClassGroupFolderAsync(classGroupInfo, classGroupTemplateName);
+                        actionResult.Success = true;
+                        actionResult.Message = $"Création du dossier de groupe de classes pour {action.ObjectName} effectuée (modèle: {classGroupTemplateName}).";
+                        break;
+                    case ActionType.CREATE_TEAM_GROUP:
+                        _logger.LogWarning($"L'action CREATE_TEAM_GROUP n'est pas encore implémentée. Tentative pour: {action.ObjectName}");
+                        actionResult.Success = false;
+                        actionResult.Message = $"Création de groupe Team pour {action.ObjectName} non implémentée.";
+                        break;
+                    case ActionType.PROVISION_USER_SHARE:
+                        _logger.LogInformation($"Tentative de provisionnement du partage utilisateur pour: {action.ObjectName} avec les attributs: {System.Text.Json.JsonSerializer.Serialize(action.Attributes)}");
+                        string serverName = action.Attributes.GetValueOrDefault("ServerName");
+                        // string baseNtfsPath = action.Attributes.GetValueOrDefault("BaseNtfsPath"); // ANCIEN
+                        string localPathOnServer = action.Attributes.GetValueOrDefault("LocalPathForUserShareOnServer"); // NOUVEAU
+                        string configuredShareName = action.Attributes.GetValueOrDefault("ShareNameForUserFolders");   // NOUVEAU
+                        string accountAd = action.Attributes.GetValueOrDefault("AccountAd");
+                        string subfoldersJson = action.Attributes.GetValueOrDefault("Subfolders");
+                        List<string> subfolders = new List<string>();
+                        if (!string.IsNullOrWhiteSpace(subfoldersJson)) 
+                        {
+                            try { subfolders = System.Text.Json.JsonSerializer.Deserialize<List<string>>(subfoldersJson) ?? new List<string>(); }
+                            catch (Exception ex) { _logger.LogError(ex, $"Erreur lors de la désérialisation de Subfolders pour PROVISION_USER_SHARE pour {action.ObjectName}"); }
+                        }
+
+                        // if (string.IsNullOrWhiteSpace(serverName) || string.IsNullOrWhiteSpace(baseNtfsPath) || string.IsNullOrWhiteSpace(accountAd)) // ANCIENNE CONDITION
+                        if (string.IsNullOrWhiteSpace(serverName) || 
+                            string.IsNullOrWhiteSpace(localPathOnServer) || 
+                            string.IsNullOrWhiteSpace(configuredShareName) || 
+                            string.IsNullOrWhiteSpace(accountAd))
+                        {
+                            actionResult.Success = false;
+                            actionResult.Message = $"Attributs manquants (ServerName, LocalPathForUserShareOnServer, ShareNameForUserFolders, ou AccountAd) pour le provisionnement du partage utilisateur {action.ObjectName}.";
+                            // actionResult.Message = $"Attributs manquants (ServerName, BaseNtfsPath, ou AccountAd) pour le provisionnement du partage utilisateur {action.ObjectName}."; // Ligne dupliquée supprimée
+                            _logger.LogWarning(actionResult.Message + $" Attributs reçus: {System.Text.Json.JsonSerializer.Serialize(action.Attributes)}");
+                        }
+                        else
+                        {
+                            // bool provisionSuccess = await _folderManagementService.ProvisionUserShareAsync(serverName, baseNtfsPath, accountAd, subfolders); // ANCIEN APPEL
+                            bool provisionSuccess = await _folderManagementService.ProvisionUserShareAsync(serverName, localPathOnServer, configuredShareName, accountAd, subfolders); // NOUVEL APPEL
+                            actionResult.Success = provisionSuccess;
+                            actionResult.Message = $"{(provisionSuccess ? "Provisionnement" : "Échec du provisionnement")} du partage utilisateur '{action.ObjectName}' pour '{accountAd}' sur '{serverName}'.";
+                            if (!provisionSuccess)
+                            {
+                                _logger.LogError($"Échec de ProvisionUserShareAsync pour {action.ObjectName}. Message du service FolderManagement attendu dans ses propres logs.");
+                            }
+                        }
                         break;
                     default:
                         actionResult.Success = false;
@@ -1050,24 +1316,19 @@ namespace ADManagerAPI.Services
             }
         }
 
-        public async Task<ImportResult> ProcessCsvDataAsync(List<Dictionary<string, string>> data, ImportConfig config)
+        public async Task<ImportResult> ProcessSpreadsheetDataAsync(List<Dictionary<string, string>> data, ImportConfig config)
         {
-            _logger.LogInformation($"Traitement des données CSV: {data.Count} lignes");
+            _logger.LogInformation($"Traitement des données de tableur: {data.Count} lignes");
             
-            // Analyser d'abord les données
-            var analysisResult = await AnalyzeCsvDataAsync(data, config);
+            var analysisResult = await AnalyzeSpreadsheetDataAsync(data, config);
             
-            // Créer une liste d'actions vide
             var actions = new List<LegacyImportActionItem>();
             
-            // Si l'analyse est valide, déterminer automatiquement les actions
             if (analysisResult.IsValid)
             {
-                // Logique pour déterminer les actions basée sur l'analyse
-                // Pour cet exemple, nous supposons que c'est implémenté ailleurs
+                // Logic to determine actions based on analysis
             }
             
-            // Exécuter les actions
             return await ExecuteImportFromActionsAsync(data, config, actions);
         }
 
@@ -1099,6 +1360,13 @@ namespace ADManagerAPI.Services
 
                 _logger.LogDebug($"Traitement du mapping pour l'attribut AD '{adAttribute}' avec le template: '{template}'.");
                 string finalValue = ApplyTemplate(template, row);
+
+                // NOUVEAU LOG AJOUTÉ ICI
+                if (string.Equals(adAttribute, "sAMAccountName", StringComparison.OrdinalIgnoreCase))
+                {
+                    _logger.LogInformation($"[SAM_DEBUG] Attribut sAMAccountName: template '{template}' a produit la valeur brute: '{finalValue}' pour la ligne CSV: {System.Text.Json.JsonSerializer.Serialize(row)}");
+                }
+
                 if (!string.IsNullOrEmpty(finalValue))
                 {
                     _logger.LogDebug($"Attribut AD '{adAttribute}': template '{template}' a produit la valeur '{finalValue}'. Normalisation en cours.");
@@ -1117,40 +1385,11 @@ namespace ADManagerAPI.Services
             bool hasPassword = result.ContainsKey("password") || result.ContainsKey("userPassword");
             
             _logger.LogInformation($"Vérification des attributs requis pour la ligne: givenName={hasGivenName}, sn={hasSn}, password={hasPassword}");
+
+            // NOUVEAU LOG AJOUTÉ ICI AVANT DE RETOURNER
+            _logger.LogInformation($"[SAM_DEBUG] Valeur finale de sAMAccountName mappée avant retour de MapRow: '{result.GetValueOrDefault("sAMAccountName")}' pour la ligne CSV: {System.Text.Json.JsonSerializer.Serialize(row)}");
             
-            if (!hasGivenName || !hasSn || !hasPassword)
-            {
-                // Journaliser la ligne complète pour faciliter le débogage
-                _logger.LogWarning($"Ligne CSV avec attributs manquants: {JsonSerializer.Serialize(row)}");
-                _logger.LogWarning($"Résultat du mapping avec attributs manquants: {JsonSerializer.Serialize(result)}");
-                
-                // Ajouter un mot de passe par défaut si absent
-                if (!hasPassword)
-                {
-                    string defaultPassword = "Changeme1!";
-                    result["password"] = defaultPassword;
-                    _logger.LogWarning($"Ajout d'un mot de passe par défaut '{defaultPassword}' pour la création d'utilisateur");
-                }
-                
-                // Dériver givenName et sn du samAccountName si nécessaire
-                if (result.TryGetValue("sAMAccountName", out var sam) && !string.IsNullOrEmpty(sam))
-                {
-                    var parts = sam.Split('.');
-                    if (parts.Length >= 2 && !hasGivenName)
-                    {
-                        result["givenName"] = char.ToUpper(parts[0][0]) + parts[0].Substring(1);
-                        _logger.LogWarning($"Dérivation de givenName '{result["givenName"]}' depuis sAMAccountName '{sam}'");
-                    }
-                    
-                    if (parts.Length >= 2 && !hasSn)
-                    {
-                        result["sn"] = char.ToUpper(parts[1][0]) + parts[1].Substring(1);
-                        _logger.LogWarning($"Dérivation de sn '{result["sn"]}' depuis sAMAccountName '{sam}'");
-                    }
-                }
-            }
-            
-            _logger.LogDebug($"Fin du mappage de la ligne CSV. Attributs AD mappés: {JsonSerializer.Serialize(result)}");
+            _logger.LogDebug($"Fin du mappage de la ligne CSV. Attributs AD mappés: {System.Text.Json.JsonSerializer.Serialize(result)}");
             return result;
         }
 
@@ -1230,16 +1469,42 @@ namespace ADManagerAPI.Services
         /// </summary>
         private string RemoveDiacritics(string text)
         {
-            if (string.IsNullOrEmpty(text))
+            if (string.IsNullOrEmpty(text)) 
                 return text;
-            var normalizedString = text.Normalize(NormalizationForm.FormD);
+
+            // Normalisation pour décomposer les caractères accentués
+            string normalizedString = text.Normalize(NormalizationForm.FormD);
             var stringBuilder = new StringBuilder();
-            foreach (var c in normalizedString)
+
+            foreach (char c in normalizedString)
             {
-                if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark)
+                // Conserver les lettres, les chiffres et le point
+                if (char.IsLetterOrDigit(c) || c == '.')
+                {
                     stringBuilder.Append(c);
+                }
+                // Remplacer certains caractères spécifiques s'ils ne sont pas déjà décomposés et filtrés
+                // Ceci est un exemple simple, une cartographie plus complète peut être nécessaire
+                else if (c == 'é' || c == 'è' || c == 'ê' || c == 'ë') stringBuilder.Append('e');
+                else if (c == 'à' || c == 'â') stringBuilder.Append('a');
+                else if (c == 'ç') stringBuilder.Append('c');
+                else if (c == 'ù' || c == 'û') stringBuilder.Append('u');
+                else if (c == 'î' || c == 'ï') stringBuilder.Append('i');
+                else if (c == 'ô') stringBuilder.Append('o');
+                // Ignorer les marques non espaçantes qui n'ont pas été transformées en lettres simples
+                else if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark)
+                {
+                    // Conserver les caractères qui ne sont pas des marques non espaçantes et qui ne sont pas explicitement remplacés
+                    // mais qui pourraient être problématiques pour un sAMAccountName. Un filtrage plus strict est souvent appliqué ici.
+                    // Pour l'instant, on les laisse passer s'ils ne sont pas des marques non espaçantes.
+                    // stringBuilder.Append(c); // Optionnel: si on veut garder plus de caractères
+                }
             }
-            return stringBuilder.ToString().Normalize(NormalizationForm.FormC);
+            // Re-normaliser peut être utile, mais ici on a construit une chaîne ASCII-like
+            string result = stringBuilder.ToString();
+            
+            // Si après le traitement, la chaîne est vide (ex: entrée "?" ), retourner une valeur par défaut ou l'original pour éviter les erreurs.
+            return string.IsNullOrWhiteSpace(result) ? text : result;
         }
 
         /// <summary>
@@ -1296,123 +1561,105 @@ namespace ADManagerAPI.Services
 
         #endregion
 
-        // Nouvelle section pour la gestion des utilisateurs orphelins
         #region Orphan User Cleanup
-
-        private async Task<List<string>> ProcessOrphanedUsersAsync(List<Dictionary<string, string>> csvData, ImportConfig config, ImportAnalysis analysis)
+        private async Task<List<string>> ProcessOrphanedUsersAsync(List<Dictionary<string, string>> spreadsheetData, ImportConfig config, ImportAnalysis analysis)
         {
             string rootOuForCleanup = config.DefaultOU;
-            List<string> finalOusToScan = new List<string>(); // Liste des OUs réellement scannées
+            List<string> finalOusToScan = new List<string>();
 
             if (string.IsNullOrEmpty(rootOuForCleanup))
             {
-                _logService.Log("IMPORT_ORPHANS_WARN", "[IMPORT ORPHANS] Nettoyage des orphelins activé, mais config.DefaultOU (OU racine pour le nettoyage) est vide. Le processus est annulé.");
-                analysis.Actions.Add(new ImportAction {
-                    ActionType = ActionType.ERROR, ObjectName = "Configuration Nettoyage Orphelins", Path = "",
-                    Message = "Nettoyage des orphelins activé, mais l'OU racine pour le nettoyage (config.DefaultOU) n'est pas configurée.",
-                    Attributes = new Dictionary<string, string>()
-                });
-                return finalOusToScan; // Retourner la liste vide
+              //  _logService.Log("IMPORT_ORPHANS_WARN", "[IMPORT ORPHANS] Nettoyage des orphelins activé, mais config.DefaultOU est vide. Annulé.");
+                analysis.Actions.Add(new ImportAction { ActionType = ActionType.ERROR, ObjectName = "Config Nettoyage Orphelins", Message = "config.DefaultOU non configurée." });
+                return finalOusToScan;
             }
 
-            _logService.Log("IMPORT_ORPHANS_INFO", $"[IMPORT ORPHANS] Début du processus de nettoyage des utilisateurs orphelins. OU racine pour le scan: {rootOuForCleanup}");
+           // _logService.Log("IMPORT_ORPHANS_INFO", $"[IMPORT ORPHANS] Début nettoyage. OU racine: {rootOuForCleanup}");
 
-            // 1. Obtenir tous les sAMAccountNames des utilisateurs présents dans le fichier CSV (liste globale de référence)
-            var allSamAccountNamesFromCsv = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            _logService.Log("IMPORT_ORPHANS_INFO", $"[IMPORT ORPHANS] Collecte de tous les sAMAccountNames depuis le CSV pour la comparaison globale.");
-            foreach (var rowInCsv in csvData)
+            var allSamAccountNamesFromSpreadsheet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+           // _logService.Log("IMPORT_ORPHANS_INFO", "[IMPORT ORPHANS] Collecte sAMAccountNames depuis fichier.");
+            foreach (var rowInSpreadsheet in spreadsheetData)
             {
-                var mappedAttributes = MapRow(rowInCsv, config);
+                var mappedAttributes = MapRow(rowInSpreadsheet, config);
                 if (!mappedAttributes.TryGetValue("sAMAccountName", out var samAccountNameFromMapping) || string.IsNullOrEmpty(samAccountNameFromMapping))
                 {
-                    _logger.LogWarning($"[ORPHAN_DEBUG] sAMAccountName non trouvé/vide après mapping pour une ligne CSV. Attributs: {JsonSerializer.Serialize(mappedAttributes)}");
+                  //  _logger.LogWarning($"[ORPHAN_DEBUG] sAMAccountName non trouvé/vide. Attributs: {JsonSerializer.Serialize(mappedAttributes)}");
                     continue;
                 }
                 string cleanedSamForComparison = samAccountNameFromMapping.Split('(')[0].Trim();
                 if (string.IsNullOrEmpty(cleanedSamForComparison))
                 {
-                     _logger.LogWarning($"[ORPHAN_DEBUG] sAMAccountName nettoyé est vide. Original mappé: '{samAccountNameFromMapping}'. Ignoré.");
+                  //   _logger.LogWarning($"[ORPHAN_DEBUG] sAMAccountName nettoyé vide. Original: '{samAccountNameFromMapping}'. Ignoré.");
                     continue;
                 }
-                allSamAccountNamesFromCsv.Add(cleanedSamForComparison);
+                allSamAccountNamesFromSpreadsheet.Add(cleanedSamForComparison);
             }
-            _logService.Log("IMPORT_ORPHANS_INFO", $"[IMPORT ORPHANS] {allSamAccountNamesFromCsv.Count} sAMAccountNames uniques collectés depuis le CSV. Ex: {string.Join(", ", allSamAccountNamesFromCsv.Take(5))}{(allSamAccountNamesFromCsv.Count > 5 ? "..." : "")}");
+         //   _logService.Log("IMPORT_ORPHANS_INFO", $"[IMPORT ORPHANS] {allSamAccountNamesFromSpreadsheet.Count} sAMAccountNames collectés. Ex: {string.Join(", ", allSamAccountNamesFromSpreadsheet.Take(5))}{(allSamAccountNamesFromSpreadsheet.Count > 5 ? "..." : "")}");
 
-            // 2. Obtenir la liste de toutes les OUs à scanner (l'OU racine et ses descendantes)
-            // List<string> ousToScan; // Sera remplacée par finalOusToScan
             try
             {
-                _logService.Log("IMPORT_ORPHANS_INFO", $"[IMPORT ORPHANS] Récupération des OUs à scanner récursivement à partir de : {rootOuForCleanup}");
+                //_logService.Log("IMPORT_ORPHANS_INFO", $"[IMPORT ORPHANS] Récupération OUs à scanner récursivement depuis: {rootOuForCleanup}");
                 finalOusToScan = await _ldapService.GetOrganizationalUnitPathsRecursiveAsync(rootOuForCleanup);
                 if (!finalOusToScan.Any())
                 {
-                     _logService.Log("IMPORT_ORPHANS_WARN", $"[IMPORT ORPHANS] Aucune OU (même pas l'OU racine '{rootOuForCleanup}') n'a été trouvée pour le scan des orphelins. Le nettoyage est arrêté pour cette branche.");
-                     return finalOusToScan; // Retourner la liste vide
+                    // _logService.Log("IMPORT_ORPHANS_WARN", $"[IMPORT ORPHANS] Aucune OU trouvée pour scan. Nettoyage arrêté.");
+                     return finalOusToScan;
                 }
-                 _logService.Log("IMPORT_ORPHANS_INFO", $"[IMPORT ORPHANS] {finalOusToScan.Count} OUs seront scannées pour les orphelins. Ex: {string.Join("; ", finalOusToScan.Take(3))}{(finalOusToScan.Count > 3 ? "..." : "")}");
+                // _logService.Log("IMPORT_ORPHANS_INFO", $"[IMPORT ORPHANS] {finalOusToScan.Count} OUs seront scannées. Ex: {string.Join("; ", finalOusToScan.Take(3))}{(finalOusToScan.Count > 3 ? "..." : "")}");
             }
             catch (Exception ex)
             {
-                _logService.LogError("IMPORT_ORPHANS_ERROR", $"[IMPORT ORPHANS] Erreur lors de la récupération de la liste des OUs à scanner à partir de {rootOuForCleanup}: {ex.Message}", ex);
-                analysis.Actions.Add(new ImportAction {
-                    ActionType = ActionType.ERROR, ObjectName = $"Erreur Listage OUs Récursif - {rootOuForCleanup}", Path = rootOuForCleanup,
-                    Message = $"Impossible de lister les OUs sous {rootOuForCleanup} pour le nettoyage: {ex.Message}",
-                    Attributes = new Dictionary<string, string>()
-                });
-                return finalOusToScan; // Retourner la liste potentiellement vide ou partiellement remplie
+              //  _logService.LogError("IMPORT_ORPHANS_ERROR", $"[IMPORT ORPHANS] Erreur listage OUs: {ex.Message}", ex);
+                analysis.Actions.Add(new ImportAction { ActionType = ActionType.ERROR, ObjectName = $"Erreur Listage OUs - {rootOuForCleanup}", Message = $"Erreur: {ex.Message}" });
+                return finalOusToScan;
             }
             
             int totalOrphanedUsersFound = 0;
 
-            // 3. Pour chaque OU à scanner, trouver et marquer les orphelins
             foreach (var currentOuToScan in finalOusToScan)
             {
-                _logService.Log("IMPORT_ORPHANS_INFO", $"[IMPORT ORPHANS] Scan de l'OU: '{currentOuToScan}' pour les utilisateurs orphelins.");
+               // _logService.Log("IMPORT_ORPHANS_INFO", $"[IMPORT ORPHANS] Scan OU: '{currentOuToScan}'.");
                 List<string> existingSamAccountNamesInCurrentOU;
                 try
                 {
                     existingSamAccountNamesInCurrentOU = await _ldapService.GetUsersInOUAsync(currentOuToScan);
-                    _logger.LogDebug($"[ORPHAN_DEBUG] Dans '{currentOuToScan}', utilisateurs AD trouvés: {existingSamAccountNamesInCurrentOU.Count}. Ex: {string.Join(", ", existingSamAccountNamesInCurrentOU.Take(5))}{(existingSamAccountNamesInCurrentOU.Count > 5 ? "..." : "")}");
+                //    _logger.LogDebug($"[ORPHAN_DEBUG] Dans '{currentOuToScan}', utilisateurs AD: {existingSamAccountNamesInCurrentOU.Count}. Ex: {string.Join(", ", existingSamAccountNamesInCurrentOU.Take(5))}{(existingSamAccountNamesInCurrentOU.Count > 5 ? "..." : "")}");
                 }
                 catch (Exception ex)
                 {
-                    _logService.LogError("IMPORT_ORPHANS_ERROR", $"[IMPORT ORPHANS] Erreur lors de la récupération des utilisateurs de l'OU '{currentOuToScan}' pour le nettoyage: {ex.Message}", ex);
-                    analysis.Actions.Add(new ImportAction {
-                        ActionType = ActionType.ERROR, ObjectName = $"Erreur Listage Utilisateurs AD - {currentOuToScan}", Path = currentOuToScan,
-                        Message = $"Impossible de lister les utilisateurs AD dans l'OU '{currentOuToScan}' pour le nettoyage: {ex.Message}",
-                        Attributes = new Dictionary<string, string>()
-                    });
+                    _logService.LogError("IMPORT_ORPHANS_ERROR", $"[IMPORT ORPHANS] Erreur listage utilisateurs OU '{currentOuToScan}': {ex.Message}", ex);
+                    analysis.Actions.Add(new ImportAction { ActionType = ActionType.ERROR, ObjectName = $"Erreur Listage Utilisateurs AD - {currentOuToScan}", Message = $"Erreur: {ex.Message}"});
                     continue; 
                 }
 
                 if (!existingSamAccountNamesInCurrentOU.Any())
                 {
-                    _logger.LogDebug($"[ORPHAN_DEBUG] Aucun utilisateur AD trouvé dans l'OU '{currentOuToScan}'. Passage à l'OU suivante.");
+                    _logger.LogDebug($"[ORPHAN_DEBUG] Aucun utilisateur AD dans '{currentOuToScan}'.");
                     continue;
                 }
 
                 int orphanedInThisOU = 0;
                 foreach (var existingSamInAD in existingSamAccountNamesInCurrentOU)
                 {
-                    if (!allSamAccountNamesFromCsv.Contains(existingSamInAD)) 
+                    if (!allSamAccountNamesFromSpreadsheet.Contains(existingSamInAD)) 
                     {
-                        _logService.Log("IMPORT_ORPHANS_INFO", $"[IMPORT ORPHANS] Utilisateur orphelin identifié: '{existingSamInAD}' dans l'OU '{currentOuToScan}'. Action de suppression sera ajoutée.");
+                      //  _logService.Log("IMPORT_ORPHANS_INFO", $"[IMPORT ORPHANS] Orphelin: '{existingSamInAD}' dans '{currentOuToScan}'. Suppression ajoutée.");
                         analysis.Actions.Add(new ImportAction
                         {
                             ActionType = ActionType.DELETE_USER,
                             ObjectName = existingSamInAD,
                             Path = currentOuToScan, 
-                            Message = $"Suppression de l'utilisateur orphelin '{existingSamInAD}' de l'OU '{currentOuToScan}' car non présent dans le fichier CSV actuel.",
+                            Message = $"Suppression orphelin '{existingSamInAD}' de '{currentOuToScan}' car non présent dans fichier.",
                             Attributes = new Dictionary<string, string>()
                         });
                         orphanedInThisOU++;
                         totalOrphanedUsersFound++;
                     }
                 }
-                _logService.Log("IMPORT_ORPHANS_INFO", $"[IMPORT ORPHANS] Dans l'OU '{currentOuToScan}', {orphanedInThisOU} utilisateurs orphelins identifiés.");
+                //_logService.Log("IMPORT_ORPHANS_INFO", $"[IMPORT ORPHANS] Dans '{currentOuToScan}', {orphanedInThisOU} orphelins identifiés.");
             }
-            _logService.Log("IMPORT_ORPHANS_INFO", $"[IMPORT ORPHANS] Processus de nettoyage terminé. Total de {totalOrphanedUsersFound} utilisateurs orphelins identifiés sur toutes les OUs scannées sous '{rootOuForCleanup}'.");
-            return finalOusToScan; // Retourner la liste des OUs qui ont été scannées
+            //_logService.Log("IMPORT_ORPHANS_INFO", $"[IMPORT ORPHANS] Nettoyage terminé. {totalOrphanedUsersFound} orphelins identifiés sous '{rootOuForCleanup}'.");
+            return finalOusToScan;
         }
         #endregion
 
@@ -1470,11 +1717,7 @@ namespace ADManagerAPI.Services
                 catch (Exception ex)
                 {
                     _logService.LogError("EMPTY_OU_CLEANUP_ERROR", $"[EMPTY OU] Erreur lors de la vérification si l'OU '{ouDn}' est vide: {ex.Message}", ex);
-                    analysis.Actions.Add(new ImportAction {
-                        ActionType = ActionType.ERROR, ObjectName = $"Erreur vérification vacuité OU - {ExtractOuName(ouDn)}", Path = ouDn,
-                        Message = $"Impossible de vérifier si l'OU '{ouDn}' est vide: {ex.Message}",
-                        Attributes = new Dictionary<string, string>()
-                    });
+                    analysis.Actions.Add(new ImportAction { ActionType = ActionType.ERROR, ObjectName = $"Erreur vérification vacuité OU - {ExtractOuName(ouDn)}", Message = $"Erreur: {ex.Message}" });
                 }
             }
             _logService.Log("EMPTY_OU_CLEANUP_INFO", $"[EMPTY OU] Fin du processus de vérification des OUs vides. {ousMarkedForDeletion} OUs marquées pour suppression.");

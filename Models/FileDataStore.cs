@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 
 namespace ADManagerAPI.Models
 {
-    public class CsvDataStore
+    public class FileDataStore
     {
         private static readonly ConcurrentDictionary<string, List<Dictionary<string, string>>> _csvData = new();
         

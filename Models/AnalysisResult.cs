@@ -2,7 +2,7 @@ using System.Collections.Generic;
 
 namespace ADManagerAPI.Models
 {
-    public class CsvAnalysisResult
+    public class AnalysisResult
     {
         public bool IsValid { get; set; } = true;
         public bool Success { get; set; } = true;

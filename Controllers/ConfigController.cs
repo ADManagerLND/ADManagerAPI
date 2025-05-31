@@ -125,7 +125,7 @@ namespace ADManagerAPI.Controllers
         }
         
         [HttpPut("ldap")]
-        public async Task<ActionResult> UpdateLdapConfig([FromBody] LdapSettings config)
+        public async Task<ActionResult> UpdateLdapConfig([FromBody] Models.LdapSettings config)
         {
             try
             {

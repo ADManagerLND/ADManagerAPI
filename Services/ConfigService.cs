@@ -1,10 +1,16 @@
+using System;
+using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading.Tasks;
+using System.Collections.Generic;
 using ADManagerAPI.Models;
 using ADManagerAPI.Services.Interfaces;
+using ADManagerAPI.Config;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Logging;
+using Microsoft.AspNetCore.DataProtection;
 
 namespace ADManagerAPI.Services;
 
@@ -14,13 +20,21 @@ public class ConfigService : IConfigService
     private readonly string _configPath;
     private readonly string _settingsFilePath;
     private ApplicationSettings _settings;
+    private readonly IDataProtectionProvider _dataProtectionProvider;
+    private readonly JsonSerializerOptions _serializerOptions;
 
-    public ConfigService(ILogger<ConfigService> logger)
+    public ConfigService(ILogger<ConfigService> logger, IDataProtectionProvider dataProtectionProvider)
     {
         _logger = logger;
         _configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config");
         _settingsFilePath = Path.Combine(_configPath, "settings.json");
         Directory.CreateDirectory(_configPath);
+        _dataProtectionProvider = dataProtectionProvider;
+        _serializerOptions = new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        };
         LoadSettingsAsync().Wait();
     }
 
@@ -32,14 +46,14 @@ public class ConfigService : IConfigService
             {
                 var json = await File.ReadAllTextAsync(_settingsFilePath);
                 _settings = JsonSerializer.Deserialize<ApplicationSettings>(json) ?? new ApplicationSettings();
-                _settings.FolderManagement ??= new FolderManagementSettings();
-                _settings.Fsrm ??= new FsrmSettings();
+                _settings.FolderManagementSettings ??= new FolderManagementSettings();
+                _settings.FsrmSettings ??= new FsrmSettings();
             }
             else
             {
                 _settings = new ApplicationSettings();
-                _settings.FolderManagement ??= new FolderManagementSettings();
-                _settings.Fsrm ??= new FsrmSettings();
+                _settings.FolderManagementSettings ??= new FolderManagementSettings();
+                _settings.FsrmSettings ??= new FsrmSettings();
                 await SaveSettingsAsync();
             }
         }
@@ -50,22 +64,43 @@ public class ConfigService : IConfigService
         }
     }
 
-    private async Task SaveSettingsAsync()
+    private async Task SaveSettingsAsync(ApplicationSettings settings = null)
     {
         try
         {
-            var options = new JsonSerializerOptions
-            {
-                WriteIndented = true,
-                DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-            };
+            _logger.LogInformation("Début de sauvegarde des paramètres dans {FilePath}", _settingsFilePath);
             
-            var json = JsonSerializer.Serialize(_settings, options);
-            await File.WriteAllTextAsync(_settingsFilePath, json);
+            settings ??= _settings;
+            var json = JsonSerializer.Serialize(settings, _serializerOptions);
+            
+            // S'assurer que le répertoire existe
+            var directory = Path.GetDirectoryName(_settingsFilePath);
+            if (!Directory.Exists(directory) && directory != null)
+            {
+                _logger.LogInformation("Création du répertoire {Directory}", directory);
+                Directory.CreateDirectory(directory);
+            }
+            
+            // Écrire directement dans un nouveau fichier temporaire puis remplacer le fichier existant
+            // pour éviter les problèmes de verrouillage ou d'écriture partielle
+            string tempFile = _settingsFilePath + ".tmp";
+            await File.WriteAllTextAsync(tempFile, json);
+            
+            if (File.Exists(_settingsFilePath))
+            {
+                File.Delete(_settingsFilePath);
+            }
+            
+            File.Move(tempFile, _settingsFilePath);
+            
+            // Mettre à jour la version en mémoire
+            _settings = settings;
+            
+            _logger.LogInformation("Paramètres sauvegardés avec succès dans {FilePath}", _settingsFilePath);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erreur lors de la sauvegarde des paramètres");
+            _logger.LogError(ex, "Erreur lors de l'enregistrement des paramètres dans {FilePath}", _settingsFilePath);
             throw;
         }
     }
@@ -260,7 +295,7 @@ public class ConfigService : IConfigService
     #endregion
 
     #region Configuration LDAP
-    public async Task<LdapSettings> GetLdapSettingsAsync()
+    public async Task<Models.LdapSettings> GetLdapSettingsAsync()
     {
         try
         {
@@ -273,20 +308,42 @@ public class ConfigService : IConfigService
         }
     }
 
-    public async Task UpdateLdapSettingsAsync(LdapSettings config)
+    public async Task UpdateLdapSettingsAsync(Models.LdapSettings ldapSettings)
     {
+        if (ldapSettings == null)
+        {
+            throw new ArgumentNullException(nameof(ldapSettings));
+        }
+
+        _logger.LogInformation("Début de mise à jour des paramètres LDAP");
+        
         try
         {
-            _settings.Ldap = config;
-            await SaveSettingsAsync();
+            // Chiffrer le mot de passe avant de le stocker
+            var encryptionHelper = new EncryptionHelper(_dataProtectionProvider);
+            string encryptedPassword = encryptionHelper.EncryptString(ldapSettings.LdapPassword);
+            _logger.LogInformation("Mot de passe chiffré avec succès");
+            
+            // Mettre à jour les paramètres LDAP dans la configuration mémoire
+            _settings.Ldap.LdapServer = ldapSettings.LdapServer;
+            _settings.Ldap.LdapDomain = ldapSettings.LdapDomain;
+            _settings.Ldap.LdapPort = ldapSettings.LdapPort;
+            _settings.Ldap.LdapBaseDn = ldapSettings.LdapBaseDn;
+            _settings.Ldap.LdapUsername = ldapSettings.LdapUsername;
+            _settings.Ldap.LdapPassword = encryptedPassword; // Stocke le mot de passe chiffré
+            _settings.Ldap.LdapSsl = ldapSettings.LdapSsl;
+            _settings.Ldap.LdapPageSize = ldapSettings.LdapPageSize;
+            
+            // Sauvegarder explicitement dans le fichier
+            await SaveSettingsAsync(_settings);
+            _logger.LogInformation("Paramètres LDAP sauvegardés dans le fichier {FilePath}", _settingsFilePath);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erreur lors de la mise à jour de la configuration LDAP");
+            _logger.LogError(ex, "Erreur lors de la mise à jour des paramètres LDAP");
             throw;
         }
     }
-
     #endregion
 
     #region Attributs utilisateur
@@ -346,8 +403,8 @@ public class ConfigService : IConfigService
         try
         {
             _settings ??= new ApplicationSettings();
-            _settings.FolderManagement ??= new FolderManagementSettings();
-            return Task.FromResult(_settings.FolderManagement);
+            _settings.FolderManagementSettings ??= new FolderManagementSettings();
+            return Task.FromResult(_settings.FolderManagementSettings);
         }
         catch (Exception ex)
         {
@@ -360,7 +417,7 @@ public class ConfigService : IConfigService
     {
         try
         {
-            _settings.FolderManagement = settings;
+            _settings.FolderManagementSettings = settings;
             await SaveSettingsAsync();
         }
         catch (Exception ex)
@@ -377,8 +434,8 @@ public class ConfigService : IConfigService
         try
         {
             _settings ??= new ApplicationSettings();
-            _settings.Fsrm ??= new FsrmSettings();
-            return Task.FromResult(_settings.Fsrm);
+            _settings.FsrmSettings ??= new FsrmSettings();
+            return Task.FromResult(_settings.FsrmSettings);
         }
         catch (Exception ex)
         {
@@ -391,7 +448,7 @@ public class ConfigService : IConfigService
     {
         try
         {
-            _settings.Fsrm = settings;
+            _settings.FsrmSettings = settings;
             await SaveSettingsAsync();
         }
         catch (Exception ex)

@@ -2,18 +2,42 @@ using System.Collections.Generic;
 
 namespace ADManagerAPI.Models
 {
+    public class RemoteServerSettings
+    {
+        public string? TargetServerName { get; set; } // Null or empty means local execution
+        public bool UseExplicitCredentials { get; set; } = false;
+        public string? RemoteUser { get; set; } // Required if UseExplicitCredentials is true
+        public string? RemotePassword { get; set; } // Required if UseExplicitCredentials is true. STORE SECURELY!
+    }
+
     public class FolderManagementSettings
     {
-        public string BaseStudentPath { get; set; }
-        public string BaseClassGroupPath { get; set; }
-        public List<FolderTemplate> Templates { get; set; }
+        public string BaseStudentPath { get; set; } = "D:\\Students"; // Example default
+        public string BaseClassGroupPath { get; set; } = "D:\\Classes"; // Example default
+        public List<FolderTemplate> Templates { get; set; } = new List<FolderTemplate>();
+        public RemoteServerSettings? RemoteServerSettings { get; set; }
+    }
+
+    public class FolderPermission
+    {
+        public string IdentityReference { get; set; } // e.g., "DOMAIN\\UserOrGroup", "BUILTIN\\Administrators", "NT AUTHORITY\\SYSTEM"
+        public string FileSystemRights { get; set; } // e.g., "FullControl", "Modify", "ReadAndExecute", "Write", "Read"
+        public string AccessControlType { get; set; } // "Allow" or "Deny"
+        public string? InheritanceFlags { get; set; } // e.g., "None", "ContainerInherit", "ObjectInherit"
+        public string? PropagationFlags { get; set; } // e.g., "None", "NoPropagateInherit", "InheritOnly"
+    }
+
+    public class SubFolderDefinition
+    {
+        public string Path { get; set; }
+        public List<FolderPermission> Permissions { get; set; } = new List<FolderPermission>();
     }
 
     public class FolderTemplate
     {
         public string Name { get; set; }
         public TemplateType Type { get; set; } // Student or ClassGroup
-        public List<string> SubPaths { get; set; } // Relative paths, can include placeholders like {CourseName}
+        public List<SubFolderDefinition> SubFolders { get; set; } = new List<SubFolderDefinition>(); // Changed from List<string> SubPaths
     }
 
     public enum TemplateType
@@ -22,7 +46,7 @@ namespace ADManagerAPI.Models
         ClassGroup
     }
 
-    public enum UserRole
+    public enum UserRole // This seems more related to FSRM or general user classification than just folder templates
     {
         Student,
         Professor,

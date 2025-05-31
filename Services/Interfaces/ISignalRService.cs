@@ -29,7 +29,7 @@ namespace ADManagerAPI.Services.Interfaces
         /// </summary>
         /// <param name="connectionId">ID de connexion du client</param>
         /// <param name="result">Résultat de l'analyse</param>
-        Task SendCsvAnalysisCompleteAsync(string connectionId, CsvAnalysisResult result);
+        Task SendCsvAnalysisCompleteAsync(string connectionId, AnalysisResult result);
         
         /// <summary>
         /// Envoie une notification d'erreur d'analyse CSV à un client spécifique

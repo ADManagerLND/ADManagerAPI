@@ -1,52 +1,66 @@
-using System;
-using System.Collections.Generic;
 using System.DirectoryServices.Protocols;
 using System.Net;
 using System.Text;
-using System.Threading.Tasks;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
 using ADManagerAPI.Models;
 using ADManagerAPI.Services.Interfaces;
+using System.DirectoryServices.AccountManagement;
+using ADManagerAPI.Config;
+using SearchScope = System.DirectoryServices.Protocols.SearchScope;
 
 namespace ADManagerAPI.Services
 {
     public class LdapService : ILdapService, IDisposable
     {
-        private readonly LdapConnection _connection;
-        private readonly string _baseDn;
+        private LdapConnection _connection;
+        private string _baseDn;
         private readonly ILogger<LdapService> _logger;
+        private readonly LdapSettingsProvider _ldapSettingsProvider;
 
-        public LdapService(IConfiguration config, ILogger<LdapService> logger)
+        public LdapService(ILogger<LdapService> logger, LdapSettingsProvider ldapSettingsProvider)
         {
             _logger = logger;
-            var server = config.GetValue<string>("LdapSettings:Server");
-            var port   = config.GetValue<int>("LdapSettings:Port", 389);
-            var user   = config.GetValue<string>("LdapSettings:Username");
-            var pass   = config.GetValue<string>("LdapSettings:Password");
-            _baseDn    = config.GetValue<string>("LdapSettings:BaseDn");
+            _ldapSettingsProvider = ldapSettingsProvider;
+            
+            // Initialisation de la connexion LDAP
+            InitializeLdapConnection().GetAwaiter().GetResult();
+        }
 
-            var identifier = new LdapDirectoryIdentifier(server, port);
-            _connection = new LdapConnection(identifier)
-            {
-                AuthType = AuthType.Negotiate,
-                Credential = new NetworkCredential(user, pass)
-            };
-
-            if (config.GetValue<bool>("LdapSettings:UseSsl"))
-            {
-                _connection.SessionOptions.SecureSocketLayer = true;
-                _connection.SessionOptions.VerifyServerCertificate += (_, __) => true;
-            }
-
+        private async Task InitializeLdapConnection()
+        {
             try
             {
+                // Récupérer les paramètres depuis LdapSettingsProvider
+                var server = await _ldapSettingsProvider.GetServerAsync();
+                var port = await _ldapSettingsProvider.GetPortAsync();
+                var user = await _ldapSettingsProvider.GetUsernameAsync();
+                var pass = await _ldapSettingsProvider.GetPasswordAsync();
+                _baseDn = await _ldapSettingsProvider.GetBaseDnAsync();
+                var useSsl = await _ldapSettingsProvider.GetSslAsync();
+
+                var identifier = new LdapDirectoryIdentifier(server, port);
+                _connection = new LdapConnection(identifier)
+                {
+                    AuthType = AuthType.Negotiate,
+                    Credential = new NetworkCredential(user, pass)
+                };
+
+                if (useSsl)
+                {
+                    _connection.SessionOptions.SecureSocketLayer = true;
+                    _connection.SessionOptions.VerifyServerCertificate += (_, __) => true;
+                }
+
                 _connection.Bind();
                 _logger.LogInformation("LDAP bind successful to {Server}:{Port}, BaseDn={BaseDn}", server, port, _baseDn);
             }
             catch (LdapException ex)
             {
                 _logger.LogError(ex, "LDAP bind failed: invalid credentials or connection issue");
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error initializing LDAP connection");
                 throw;
             }
         }
@@ -288,17 +302,20 @@ namespace ADManagerAPI.Services
             return list;
         }
 
-        public Task<bool> TestConnection()
+        public async Task<bool> TestConnectionAsync()
         {
             try
             {
-                var req = new SearchRequest(_baseDn, "(objectClass=*)", SearchScope.Base);
-                _connection.SendRequest(req);
-                return Task.FromResult(true);
+                using var context = await CreatePrincipalContextAsync();
+                return context.ValidateCredentials(
+                    await _ldapSettingsProvider.GetUsernameAsync(),
+                    await _ldapSettingsProvider.GetPasswordAsync()
+                );
             }
-            catch
+            catch (Exception ex)
             {
-                return Task.FromResult(false);
+                _logger.LogError(ex, "Erreur lors du test de connexion LDAP");
+                return false;
             }
         }
 
@@ -392,12 +409,49 @@ namespace ADManagerAPI.Services
             return Task.CompletedTask;
         }
 
-        public Task DeleteOrganizationalUnitAsync(string ouDn)
+        public async Task<bool> DeleteOrganizationalUnitAsync(string ouDn, bool deleteIfNotEmpty = false)
         {
-            var del = new DeleteRequest(ouDn);
-            _connection.SendRequest(del);
-            _logger.LogInformation("OU deleted {Dn}", ouDn);
-            return Task.CompletedTask;
+            _logger.LogInformation($"Demande de suppression de l'OU : {ouDn}. DeleteIfNotEmpty={deleteIfNotEmpty}");
+
+            bool isEmpty = await IsOrganizationalUnitEmptyAsync(ouDn);
+
+            if (isEmpty)
+            {
+                try
+                {
+                    var del = new DeleteRequest(ouDn);
+                    _connection.SendRequest(del); // Note: SendRequest n'est pas async ici.
+                    _logger.LogInformation("OU {Dn} supprimée car elle était vide.", ouDn);
+                    return true;
+                }
+                catch (DirectoryOperationException ex)
+                {
+                    _logger.LogError(ex, $"Erreur DirectoryOperationException lors de la tentative de suppression de l'OU vide {ouDn}. Code: {ex.Response?.ResultCode}");
+                    return false;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, $"Erreur inattendue lors de la tentative de suppression de l'OU vide {ouDn}.");
+                    return false;
+                }
+            }
+            else
+            {
+                if (deleteIfNotEmpty)
+                {
+                    _logger.LogWarning("L'OU {Dn} n'est pas vide mais deleteIfNotEmpty est true. La suppression récursive n'est PAS IMPLÉMENTÉE. L'OU N'A PAS ÉTÉ SUPPRIMÉE.", ouDn);
+                    // Implémenter la suppression récursive ici si absolument nécessaire et avec une extrême prudence.
+                    // throw new NotImplementedException("La suppression récursive d'OU non vide n'est pas implémentée.");
+                    return false; 
+                }
+                else
+                {
+                    _logger.LogWarning("L'OU {Dn} n'a pas été supprimée car elle n'est pas vide et deleteIfNotEmpty est false.", ouDn);
+                    // Pour correspondre à l'erreur originale et permettre à l'appelant de savoir que c'est parce qu'elle n'est pas vide :
+                    // throw new DirectoryOperationException($"L'OU '{ouDn}' ne peut pas être supprimée car elle n'est pas vide (non-leaf object).", (int)DirectoryStatusCode.UnwillingToPerform); // Exemple de code d'erreur
+                    return false; 
+                }
+            }
         }
 
         public async Task<List<string>> GetOrganizationalUnitPathsRecursiveAsync(string baseOuDn)
@@ -473,6 +527,29 @@ namespace ADManagerAPI.Services
             ln = ln.ToLower().Replace(" ", "").Replace("-", "");
             var s = fn + "." + ln;
             return s.Length <= 20 ? s : s.Substring(0, 20);
+        }
+
+        private async Task<PrincipalContext> CreatePrincipalContextAsync()
+        {
+            try
+            {
+                var server = await _ldapSettingsProvider.GetServerAsync();
+                var domain = await _ldapSettingsProvider.GetDomainAsync();
+                var username = await _ldapSettingsProvider.GetUsernameAsync();
+                var password = await _ldapSettingsProvider.GetPasswordAsync();
+
+                return new PrincipalContext(
+                    ContextType.Domain,
+                    server,
+                    username,
+                    password
+                );
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Erreur lors de la création du contexte principal");
+                throw;
+            }
         }
 
         public void Dispose()

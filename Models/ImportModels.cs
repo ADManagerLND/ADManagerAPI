@@ -12,16 +12,36 @@ namespace ADManagerAPI.Models
         CREATE_OU,
         UPDATE_OU,
         DELETE_OU,
-        ERROR
+        ERROR,
+        CREATE_STUDENT_FOLDER,
+        CREATE_CLASS_GROUP_FOLDER,
+        CREATE_TEAM_GROUP,
+        PROVISION_USER_SHARE
     }
     
+
+    public class ClassGroupFolderCreationConfig
+    {
+        public string? CreateClassGroupFolderColumnName { get; set; } // e.g., "CreerDossierGroupe"
+        public string? ClassGroupIdColumnName { get; set; }           // e.g., "IdGroupe"
+        public string? ClassGroupNameColumnName { get; set; }         // e.g., "NomGroupe"
+        public string? ClassGroupTemplateNameColumnName { get; set; } // e.g., "TemplateDossierGroupe"
+    }
+
+    public class TeamGroupCreationConfig
+    {
+        public string? CreateTeamGroupColumnName { get; set; } // e.g., "CreerGroupeTeam"
+        public string? TeamGroupNameColumnName { get; set; }   // e.g., "NomEquipeTeam"
+        // Add other Team-specific column mappings if needed
+    }
+
     public class ImportConfig
     {
         [JsonPropertyName("createMissingOUs")]
-        public bool CreateMissingOUs { get; set; } = false;
+        public bool CreateMissingOUs { get; set; } = true;
         
         [JsonPropertyName("defaultOU")]
-        public string DefaultOU { get; set; } = "";
+        public string DefaultOU { get; set; } = "DC=domain,DC=local";
         
         [JsonPropertyName("overwriteExisting")]
         public bool OverwriteExisting { get; set; } = true;
@@ -31,9 +51,8 @@ namespace ADManagerAPI.Models
         
         [JsonPropertyName("deleteNotInImport")]
         public bool DeleteNotInImport { get; set; } = false;
-        
-        [JsonPropertyName("csvDelimiter")]
-        public char CsvDelimiter { get; set; } = ';';
+
+        [JsonPropertyName("csvDelimiter")] public char CsvDelimiter { get; set; } = ';';
         
         [JsonPropertyName("headerMapping")]
         public Dictionary<string, string> HeaderMapping { get; set; } = new Dictionary<string, string>();
@@ -45,9 +64,71 @@ namespace ADManagerAPI.Models
         public List<string> ManualColumns { get; set; } = new List<string>();
         
         [JsonPropertyName("ouColumn")]
-        public string ouColumn { get; set; } = "";
+        public string ouColumn { get; set; } = string.Empty;
+        
+        [JsonPropertyName("samAccountNameColumn")]
+        public string SamAccountNameColumn { get; set; } = "sAMAccountName";
+        
+        // New configuration sections
+
+        public ClassGroupFolderCreationConfig? ClassGroupFolderCreationConfig { get; set; }
+        public TeamGroupCreationConfig? TeamGroupCreationConfig { get; set; }
+        public FolderSettings? Folders { get; set; } = new FolderSettings();
+        public string? NetBiosDomainName { get; set; }
     }
 
+    public class FolderSettings
+    {
+        /// <summary>
+        /// Template pour le chemin UNC du dossier personnel de l'utilisateur.
+        /// Placeholders supportés: %username%, %givenName%, %sn%, %division%, %studentId%, %initials%.
+        /// Exemple: "\\SERVER\Users\%division%\%username%"
+        /// </summary>
+        public string HomeDirectoryTemplate { get; set; }
+
+        /// <summary>
+        /// Lettre de lecteur pour l'attribut homeDrive (ex: "H:").
+        /// </summary>
+        public string HomeDriveLetter { get; set; }
+
+        /// <summary>
+        /// Valeur à utiliser pour le placeholder %division% dans HomeDirectoryTemplate 
+        /// si la 'division' de l'utilisateur est vide ou non fournie.
+        /// Si vide, le segment de chemin contenant %division% pourrait être affecté (ex: omis ou vide).
+        /// </summary>
+        public string? DefaultDivisionValue { get; set; }
+
+        /// <summary>
+        /// Nom du serveur cible pour exécuter les opérations de création de dossier (ex: via PowerShell distant).
+        /// Laisser null ou vide si les opérations sont locales ou si le service de gestion de dossiers gère cela autrement.
+        /// </summary>
+        public string? TargetServerName { get; set; }
+
+        /// <summary>
+        /// Nom du partage principal sur le serveur cible sous lequel les dossiers utilisateurs seront créés.
+        /// Exemple: "Eleves" ou "UserHomes"
+        /// </summary>
+        public string? ShareNameForUserFolders { get; set; }
+
+        /// <summary>
+        /// Chemin physique local sur le serveur cible correspondant à la racine où les dossiers utilisateurs (sous ShareNameForUserFolders) seront créés.
+        /// Utilisé pour le paramètre 'Path' de Win32_Share.Create.
+        /// Exemple: "C:\\Data\\Eleves" (si ShareNameForUserFolders="Eleves" et que les utilisateurs sont dans C:\Data\Eleves\user1)
+        /// Ou "C:\\Data\ShareRoots\Eleves" si le partage "Eleves" pointe vers ce dossier.
+        /// </summary>
+        public string? LocalPathForUserShareOnServer { get; set; }
+
+        /// <summary>
+        /// Active ou désactive la fonctionnalité de provisionnement de partage utilisateur.
+        /// </summary>
+        public bool EnableShareProvisioning { get; set; } = true;
+
+        /// <summary>
+        /// Liste des sous-dossiers à créer par défaut dans chaque dossier utilisateur partagé.
+        /// Exemple: [ "Documents", "Images", "Desktop" ]
+        /// </summary>
+        public List<string>? DefaultShareSubfolders { get; set; }
+    }
     
     public class ActionSummary
     {
@@ -200,6 +281,12 @@ namespace ADManagerAPI.Models
         [JsonPropertyName("ouColumn")]
         public string ouColumn { get; set; } = "";
         
+        // Ajout des nouvelles propriétés pour correspondre à ImportConfig
+        public ClassGroupFolderCreationConfig? ClassGroupFolderCreationConfig { get; set; }
+        public TeamGroupCreationConfig? TeamGroupCreationConfig { get; set; }
+        public FolderSettings? Folders { get; set; }
+        public string? NetBiosDomainName { get; set; }
+        
         // Méthode pour convertir en ImportConfig
         public ImportConfig ToImportConfig()
         {
@@ -213,7 +300,12 @@ namespace ADManagerAPI.Models
                 MoveObjects = MoveObjects,
                 DeleteNotInImport = DeleteNotInImport,
                 ManualColumns = ManualColumns,
-                ouColumn = ouColumn
+                ouColumn = ouColumn,
+                // Mapper les nouvelles propriétés
+                ClassGroupFolderCreationConfig = this.ClassGroupFolderCreationConfig,
+                TeamGroupCreationConfig = this.TeamGroupCreationConfig,
+                Folders = this.Folders ?? new FolderSettings(), // Assurer l'initialisation si null
+                NetBiosDomainName = this.NetBiosDomainName
             };
         }
     }
@@ -298,5 +390,47 @@ namespace ADManagerAPI.Models
         
         [JsonIgnore]
         public string ActionTypeString => ActionType.ToString();
+    }
+
+    public class ImportSummary 
+    {
+        [JsonPropertyName("totalObjects")]
+        public int TotalObjects { get; set; } = 0;
+        
+        [JsonPropertyName("createCount")]
+        public int CreateCount { get; set; } = 0;
+        
+        [JsonPropertyName("updateCount")]
+        public int UpdateCount { get; set; } = 0;
+        
+        [JsonPropertyName("deleteCount")]
+        public int DeleteCount { get; set; } = 0;
+        
+        [JsonPropertyName("errorCount")]
+        public int ErrorCount { get; set; } = 0;
+        
+        [JsonPropertyName("createOUCount")]
+        public int CreateOUCount { get; set; } = 0;
+
+        [JsonPropertyName("deleteOUCount")]
+        public int DeleteOUCount { get; set; } = 0;
+
+        [JsonPropertyName("moveCount")]
+        public int MoveCount { get; set; } = 0;
+        
+        [JsonPropertyName("processedCount")]
+        public int ProcessedCount { get; set; } = 0;
+
+        [JsonPropertyName("createStudentFolderCount")]
+        public int CreateStudentFolderCount { get; set; } = 0;
+
+        [JsonPropertyName("createClassGroupFolderCount")]
+        public int CreateClassGroupFolderCount { get; set; } = 0;
+
+        [JsonPropertyName("createTeamGroupCount")]
+        public int CreateTeamGroupCount { get; set; } = 0;
+
+        [JsonPropertyName("provisionUserShareCount")]
+        public int ProvisionUserShareCount { get; set; } = 0;
     }
 } 

@@ -73,7 +73,7 @@ namespace ADManagerAPI.Services
             });
         }
         
-        public async Task SendCsvAnalysisCompleteAsync(string connectionId, CsvAnalysisResult result)
+        public async Task SendCsvAnalysisCompleteAsync(string connectionId, AnalysisResult result)
         {
             if (result == null)
             {
@@ -247,10 +247,10 @@ namespace ADManagerAPI.Services
                 
                 // Créer un scope pour obtenir le service d'analyse CSV
                 using var scope = _serviceScopeFactory.CreateScope();
-                var csvManagerService = scope.ServiceProvider.GetRequiredService<ICsvManagerService>();
+                var csvManagerService = scope.ServiceProvider.GetRequiredService<ISpreadsheetImportService>();
                 
                 // Appeler la méthode d'analyse du CsvManagerService
-                var analysisResult = await csvManagerService.AnalyzeCsvContentAsync(fileStream, fileName, config);
+                var analysisResult = await csvManagerService.AnalyzeSpreadsheetContentAsync(fileStream, fileName, config);
                 
                 // Mettre à jour la progression après l'analyse
                 await SendCsvAnalysisProgressAsync(connectionId, 70, "analyzing", "Analyse terminée, préparation des résultats...");
@@ -261,7 +261,7 @@ namespace ADManagerAPI.Services
                     if (analysisResult.TableData != null && !string.IsNullOrEmpty(connectionId))
                     {
                         // Stocker les données CSV brutes parsées pour une utilisation ultérieure par le Hub
-                        ADManagerAPI.Models.CsvDataStore.SetCsvData(analysisResult.TableData, connectionId);
+                        ADManagerAPI.Models.FileDataStore.SetCsvData(analysisResult.TableData, connectionId);
                         _logger.LogInformation($"Données CSV brutes ({analysisResult.TableData.Count} lignes) de {fileName} stockées dans CsvDataStore pour connectionId: {connectionId}");
                     }
                     else

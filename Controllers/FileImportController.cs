@@ -1,35 +1,30 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ADManagerAPI.Models;
-using ADManagerAPI.Services;
 using ADManagerAPI.Services.Utilities;
 using ADManagerAPI.Services.Interfaces;
 using Microsoft.AspNetCore.SignalR;
 using ADManagerAPI.Hubs;
-using System.Text;
 
 namespace ADManagerAPI.Controllers
 {
     [ApiController]
     [Route("api/import")]
-    [Authorize]
+    [Authorize(Roles = "Informatique")]
     public class FileImportController : ControllerBase
     {
         private readonly ILdapService _ldapService;
         private readonly ILogService _logService;
         private readonly IConfigService _configService;
         private readonly ISignalRService _signalRService;
-        private readonly ICsvManagerService _csvManagerService;
         private readonly ILogger<FileImportController> _logger;
-        private readonly IHubContext<CsvImportHub> _csvImportHubContext;
-        private readonly IServiceScopeFactory _serviceScopeFactory;
 
         public FileImportController(
             ILdapService ldapService,
             ILogService logService,
             IConfigService configService,
             ISignalRService signalRService,
-            ICsvManagerService csvManagerService,
+            ISpreadsheetImportService csvManagerService,
             ILogger<FileImportController> logger,
             IHubContext<CsvImportHub> csvImportHubContext,
             IServiceScopeFactory serviceScopeFactory)
@@ -38,10 +33,7 @@ namespace ADManagerAPI.Controllers
             _logService = logService;
             _configService = configService;
             _signalRService = signalRService;
-            _csvManagerService = csvManagerService;
             _logger = logger;
-            _csvImportHubContext = csvImportHubContext;
-            _serviceScopeFactory = serviceScopeFactory;
         }
         
 
@@ -56,6 +48,7 @@ namespace ADManagerAPI.Controllers
             }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "Erreur lors de la récupération des configurations d'import");
                 _logService.Log("IMPORT", $"Erreur lors de la récupération des configurations: {ex.Message}");
                 return BadRequest(new { error = ex.Message });
             }
@@ -224,24 +217,35 @@ namespace ADManagerAPI.Controllers
         }
 
         [HttpGet("system/check-websocket")]
-        [AllowAnonymous] // Ou [Authorize] si l'utilisateur doit être authentifié pour vérifier
+        [Authorize]
         public IActionResult CheckWebSocketAvailability()
         {
-            // On pourrait ajouter une logique plus complexe ici si nécessaire,
-            // par exemple, vérifier si le service SignalR est réellement disponible.
-            // Pour l'instant, un simple OK suffit pour indiquer que le endpoint existe.
             _logService.Log("SYSTEM", "Vérification de la disponibilité WebSocket demandée.");
             return Ok(new { message = "WebSocket endpoint available" });
         }
 
         [HttpGet("system/check-signalr")]
-        [AllowAnonymous] // Ou [Authorize] si nécessaire
+        [Authorize]
         public IActionResult CheckSignalRAvailability()
         {
-            // Idéalement, vérifier si le hub SignalR est accessible
-            // Pour l'instant, retourner OK indique que l'API est au courant de SignalR.
             _logService.Log("SYSTEM", "Vérification de la disponibilité SignalR demandée.");
             return Ok(new { message = "SignalR endpoint potentially available" });
+        }
+
+        [HttpGet("debug-auth")]
+        [Authorize]
+        public IActionResult DebugAuth()
+        {
+            var isAuthenticated = User.Identity?.IsAuthenticated ?? false;
+            var authHeader = Request.Headers["Authorization"].FirstOrDefault();
+            
+            return Ok(new { 
+                isAuthenticated,
+                userName = User.Identity?.Name,
+                claims = User.Claims.Select(c => new { c.Type, c.Value }).ToList(),
+                authHeader = authHeader != null ? "Present" : "Missing",
+                authHeaderValue = !string.IsNullOrEmpty(authHeader) ? authHeader.Substring(0, Math.Min(20, authHeader.Length)) + "..." : null
+            });
         }
     }
 } 

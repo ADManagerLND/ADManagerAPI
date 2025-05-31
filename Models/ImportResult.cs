@@ -9,13 +9,9 @@ namespace ADManagerAPI.Models
         public int TotalProcessed { get; set; }
         public int TotalSucceeded { get; set; }
         public int TotalFailed { get; set; }
-        public List<string> Warnings { get; set; } = [];
-        public List<ImportError> Errors { get; set; } = [];
         public string Details { get; set; } = "";
-        
         public ImportSummary Summary { get; set; } = new ImportSummary();
         public List<ImportActionResult> ActionResults { get; set; } = [];
-        
         public int CreatedCount { get; set; }
         public int UpdatedCount { get; set; }
         public int DeletedCount { get; set; }

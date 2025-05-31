@@ -145,9 +145,19 @@
           "description": "El\u00E8ve de la classe de %classe%",
           "department": "Eleves / %classe%",
           "physicalDeliveryOfficeName": "%classe%",
-          "company": "Lyc\u00E9e Notre-Dame",
+          "company": "Lycée Notre-Dame",
           "homeDrive": "P:",
           "homeDirectory": " \\\\DATAA\\%prenom%.%nom%$"
+        },
+        "classGroupFolderCreationConfig": {
+          "createClassGroupFolderColumnName": "CreerDossierClasse_CSV",
+          "classGroupIdColumnName": "IdClasse_CSV",
+          "classGroupNameColumnName": "NomClasse_CSV",
+          "classGroupTemplateNameColumnName": "TemplateDossierClasse_CSV"
+        },
+        "teamGroupCreationConfig": {
+          "createTeamGroupColumnName": "CreerEquipeTeam_CSV",
+          "teamGroupNameColumnName": "NomEquipeTeam_CSV"
         },
         "requiredFields": [
           "samAccountName",
@@ -171,7 +181,18 @@
           "code",
           "dateNaissance"
         ],
-        "ouColumn": "classe"
+        "ouColumn": "classe",
+        "NetBiosDomainName": "ADTST01",
+        "Folders": {
+          "HomeDirectoryTemplate": "\\172.20.0.100\\Data\\Eleves2\\%division%\\%username%",
+          "HomeDriveLetter": "H:",
+          "DefaultDivisionValue": null,
+          "TargetServerName": "172.20.0.100",
+          "ShareNameForUserFolders": "Eleves2",
+          "LocalPathForUserShareOnServer": "C:\\Data\\Eleves2",
+          "EnableShareProvisioning": true,
+          "DefaultShareSubfolders": [ "Documents", "Desktop" ]
+        }
       },
       "createdAt": "2025-03-18T10:00:26.2967464+01:00"
     }
@@ -179,26 +200,60 @@
   "FolderManagementSettings": {
     "BaseStudentPath": "D:\\Students",
     "BaseClassGroupPath": "D:\\Classes",
+    "BaseNtfsPath": "D:\\Shares\\Users",
+    "EnableShareProvisioning": true,
+    "DefaultShareSubfolders": [ "Documents", "Desktop", "Downloads", "Pictures" ],
     "Templates": [
       {
         "Name": "StandardStudentTemplate",
         "Type": "Student",
-        "SubPaths": [
-          "Documents",
-          "Assignments",
-          "Grades",
-          "Personal_Infos_{Id}"
+        "SubFolders": [
+          {
+            "Path": "Documents",
+            "Permissions": []
+          },
+          {
+            "Path": "Assignments",
+            "Permissions": []
+          },
+          {
+            "Path": "Grades",
+            "Permissions": []
+          },
+          {
+            "Path": "Personal_Infos_{Id}",
+            "Permissions": []
+          }
         ]
       },
       {
         "Name": "StandardClassTemplate",
         "Type": "ClassGroup",
-        "SubPaths": [
-          "CourseMaterials",
-          "StudentList",
-          "Announcements_{Name}"
+        "SubFolders": [
+          {
+            "Path": "CourseMaterials",
+            "Permissions": []
+          },
+          {
+            "Path": "StudentList",
+            "Permissions": []
+          },
+          {
+            "Path": "Announcements_{Name}",
+            "Permissions": []
+          }
         ]
       }
     ]
-  }
+  },
+  "FsrmSettings": {
+    "EnableFsrmQuotas": true,
+    "FsrmServerName": null,
+    "QuotaTemplatesByRole": {
+      "Student": "1GB_Quota_Template_Students",
+      "Professor": "10GB_Quota_Template_Staff",
+      "Administrative": "5GB_Quota_Template_Admin"
+    }
+  },
+  "NetBiosDomainName": "ADTST01"
 }
