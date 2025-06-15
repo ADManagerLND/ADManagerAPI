@@ -6,35 +6,73 @@ namespace ADManagerAPI.Utils
 {
     public static class AnalysisDataStore
     {
-        // Pour un seul utilisateur, un simple champ statique suffit.
-        // Si vous revenez un jour à une gestion par ConnectionId, un ConcurrentDictionary serait approprié.
-        private static ImportAnalysis _latestAnalysis;
+        // Utilisation d'un ConcurrentDictionary pour gérer plusieurs utilisateurs par connectionId
+        private static readonly ConcurrentDictionary<string, ImportAnalysis> _analysisData = new();
         private static readonly object _lock = new object();
+
+        // Méthodes avec connectionId pour multi-utilisateurs
+        public static void SetAnalysis(string connectionId, ImportAnalysis analysis)
+        {
+            if (string.IsNullOrEmpty(connectionId))
+            {
+                Console.WriteLine("[AnalysisDataStore] ERREUR: connectionId null ou vide dans SetAnalysis");
+                return;
+            }
+
+            _analysisData.AddOrUpdate(connectionId, analysis, (key, old) => analysis);
+            Console.WriteLine($"[AnalysisDataStore] Analyse stockée pour connectionId '{connectionId}'. Actions: {analysis?.Actions?.Count ?? 0}");
+        }
+
+        public static ImportAnalysis? GetAnalysis(string connectionId)
+        {
+            if (string.IsNullOrEmpty(connectionId))
+            {
+                Console.WriteLine("[AnalysisDataStore] ERREUR: connectionId null ou vide dans GetAnalysis");
+                return null;
+            }
+
+            _analysisData.TryGetValue(connectionId, out var analysis);
+            Console.WriteLine($"[AnalysisDataStore] Récupération analyse pour connectionId '{connectionId}'. Trouvée: {analysis != null}. Actions: {analysis?.Actions?.Count ?? 0}");
+            return analysis;
+        }
+
+        public static void ClearAnalysis(string connectionId)
+        {
+            if (string.IsNullOrEmpty(connectionId))
+                return;
+
+            bool removed = _analysisData.TryRemove(connectionId, out _);
+            Console.WriteLine($"[AnalysisDataStore] Suppression analyse pour connectionId '{connectionId}'. Supprimée: {removed}");
+        }
+
+        // Méthodes legacy pour compatibilité (utilise une clé par défaut)
+        private static readonly string DEFAULT_CONNECTION_ID = "default";
 
         public static void SetLatestAnalysis(ImportAnalysis analysis)
         {
-            lock (_lock)
-            {
-                _latestAnalysis = analysis;
-            }
+            Console.WriteLine("[AnalysisDataStore] ATTENTION: Utilisation de SetLatestAnalysis (legacy). Recommandé d'utiliser SetAnalysis avec connectionId.");
+            SetAnalysis(DEFAULT_CONNECTION_ID, analysis);
         }
 
-        public static ImportAnalysis GetLatestAnalysis()
+        public static ImportAnalysis? GetLatestAnalysis()
         {
-            lock (_lock)
-            {
-                // Retourner une copie ou l'objet directement dépend si l'objet ImportAnalysis est mutable
-                // et si des modifications concurrentes sont un souci après récupération.
-                // Pour l'instant, on retourne directement.
-                return _latestAnalysis;
-            }
+            Console.WriteLine("[AnalysisDataStore] ATTENTION: Utilisation de GetLatestAnalysis (legacy). Recommandé d'utiliser GetAnalysis avec connectionId.");
+            return GetAnalysis(DEFAULT_CONNECTION_ID);
         }
 
         public static void ClearLatestAnalysis()
         {
-            lock (_lock)
+            Console.WriteLine("[AnalysisDataStore] Utilisation de ClearLatestAnalysis (legacy).");
+            ClearAnalysis(DEFAULT_CONNECTION_ID);
+        }
+
+        // Méthode utilitaire pour debug
+        public static void LogCurrentState()
+        {
+            Console.WriteLine($"[AnalysisDataStore] État actuel: {_analysisData.Count} analyses stockées");
+            foreach (var kvp in _analysisData)
             {
-                _latestAnalysis = null;
+                Console.WriteLine($"  - ConnectionId: '{kvp.Key}', Actions: {kvp.Value?.Actions?.Count ?? 0}");
             }
         }
     }

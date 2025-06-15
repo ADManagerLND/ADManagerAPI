@@ -1,7 +1,5 @@
 using ADManagerAPI.Models;
 using ADManagerAPI.Services.Interfaces;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using LogLevel = ADManagerAPI.Models.LogLevel;
 
 namespace ADManagerAPI.Services;
@@ -215,5 +213,47 @@ public class LogService : ILogService
             if (File.Exists(_logFilePath))
                 File.WriteAllText(_logFilePath, string.Empty);
         }
+    }
+
+    public async Task LogActionAsync(LogAction action, string message, string details)
+    {
+        var logEntry = new LogEntry
+        {
+            Timestamp = DateTime.Now,
+            Type = "SystemAction",
+            Action = action.ToString(),
+            Message = message,
+            Details = details,
+            Level = GetLogLevelForAction(action),
+            LevelText = GetLogLevelTextForAction(action)
+        };
+        
+        _logEntries.Add(logEntry);
+
+        SaveLogEntry(logEntry);
+
+        await Task.CompletedTask;
+    }
+    
+    private LogLevel GetLogLevelForAction(LogAction action)
+    {
+        return action switch
+        {
+            LogAction.Error => LogLevel.Error,
+            LogAction.Warning => LogLevel.Warning,
+            LogAction.Success => LogLevel.Information,
+            _ => LogLevel.Information
+        };
+    }
+    
+    private string GetLogLevelTextForAction(LogAction action)
+    {
+        return action switch
+        {
+            LogAction.Error => "error",
+            LogAction.Warning => "warning",
+            LogAction.Success => "success",
+            _ => "info"
+        };
     }
 }

@@ -6,7 +6,7 @@ namespace ADManagerAPI.Services.Interfaces;
 
 public interface IConfigService
 {
-    #region Configurations d'import
+    #region Configurations d'import (utilisées pour les mappages AD)
     Task<List<SavedImportConfig>> GetSavedImportConfigs();
     Task<SavedImportConfig> SaveImportConfig(SavedImportConfig config);
     Task<bool> DeleteImportConfig(string configId);
@@ -42,5 +42,10 @@ public interface IConfigService
     #region Configuration complète
     Task<ApplicationSettings> GetAllSettingsAsync();
     Task UpdateAllSettingsAsync(ApplicationSettings settings);
+    #endregion
+
+    #region Teams Integration Settings
+    Task<TeamsIntegrationConfig> GetTeamsIntegrationSettingsAsync();
+    Task UpdateTeamsIntegrationSettingsAsync(TeamsIntegrationConfig settings);
     #endregion
 }

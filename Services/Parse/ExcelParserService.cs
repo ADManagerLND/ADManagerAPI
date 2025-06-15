@@ -1,8 +1,16 @@
 using ADManagerAPI.Services.Parse;
 using OfficeOpenXml;
 
-public class ExcelParserService : ISpreadsheetParserService
+namespace ADManagerAPI.Services.Parse
 {
+    public class ExcelParserService : ISpreadsheetDataParser
+    {
+        
+    public bool CanHandle(string fileExtension)
+    {
+        return fileExtension.Equals(".xlsx", StringComparison.OrdinalIgnoreCase) ||
+               fileExtension.Equals(".xls", StringComparison.OrdinalIgnoreCase);
+    }
     
     public async Task<List<Dictionary<string,string>>> ParseAsync(
         Stream fileStream,
@@ -24,9 +32,6 @@ public class ExcelParserService : ISpreadsheetParserService
         if (manualColumns != null && manualColumns.Any())
         {
             headers.AddRange(manualColumns);
-            // Si manualColumns est fourni, vous pourriez vouloir ajuster colCount 
-            // ou la manière dont vous lisez les cellules si le nombre de colonnes manuelles 
-            // ne correspond pas à sheet.Dimension.End.Column.
         }
         else
         {
@@ -34,11 +39,6 @@ public class ExcelParserService : ISpreadsheetParserService
                 headers.Add(sheet.Cells[1, c].Text.Trim());
         }
         
-        // Si manualColumns a été utilisé et a un nombre de colonnes différent,
-        // colCount devrait être mis à headers.Count pour la boucle suivante.
-        // Pour l'instant, on suppose que si manualColumns est utilisé, il correspond aux données attendues.
-        // Ou, vous pouvez choisir de ne lire que les colonnes présentes dans manualColumns si elles sont fournies.
-
         var rows = new List<Dictionary<string,string>>(rowCount - 1);
 
         // 2) Pour chaque ligne de données, construire le dictionnaire
@@ -49,7 +49,6 @@ public class ExcelParserService : ISpreadsheetParserService
             var dict = new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase);
             for (int c = 1; c <= headers.Count; c++)
             {
-                // S'assurer de ne pas dépasser les colonnes réelles de la feuille si headers.Count est plus grand
                 if (c <= sheet.Dimension.End.Column)
                 {
                     dict[headers[c - 1]] = sheet.Cells[r, c].Text;
@@ -63,5 +62,6 @@ public class ExcelParserService : ISpreadsheetParserService
         }
 
         return rows;
+        }
     }
 }

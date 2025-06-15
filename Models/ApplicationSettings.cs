@@ -1,5 +1,3 @@
-using System;
-using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
 namespace ADManagerAPI.Models
@@ -27,6 +25,9 @@ namespace ADManagerAPI.Models
         [JsonPropertyName("netBiosDomainName")]
         public string NetBiosDomainName { get; set; }
 
+        [JsonPropertyName("teamsIntegration")]
+        public TeamsIntegrationConfig TeamsIntegration { get; set; }
+
         public ApplicationSettings()
         {
             Api = new ApiSettings();
@@ -36,6 +37,7 @@ namespace ADManagerAPI.Models
             FolderManagementSettings = new FolderManagementSettings();
             FsrmSettings = new FsrmSettings();
             NetBiosDomainName = string.Empty;
+            TeamsIntegration = new TeamsIntegrationConfig();
         }
     }
 
@@ -91,38 +93,5 @@ namespace ADManagerAPI.Models
 
         [JsonPropertyName("isRequired")]
         public bool IsRequired { get; set; }
-    }
-
-    public class AttributeDescription
-    {
-        /// <summary>
-        /// Nom de l'attribut
-        /// </summary>
-        public required string Name { get; set; }
-        
-        /// <summary>
-        /// Description de l'attribut
-        /// </summary>
-        public required string Description { get; set; }
-        
-        /// <summary>
-        /// Syntaxe ou format attendu de l'attribut
-        /// </summary>
-        public required string Syntax { get; set; }
-        
-        /// <summary>
-        /// Indique si l'attribut est obligatoire
-        /// </summary>
-        public bool IsRequired { get; set; }
-        
-        /// <summary>
-        /// Type de données de l'attribut
-        /// </summary>
-        public string? DataType { get; set; }
-        
-        /// <summary>
-        /// Valeur par défaut de l'attribut
-        /// </summary>
-        public string? DefaultValue { get; set; }
     }
 } 

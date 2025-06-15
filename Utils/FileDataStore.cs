@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace ADManagerAPI.Models
+namespace ADManagerAPI.Utils
 {
     public class FileDataStore
     {

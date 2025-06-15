@@ -1,16 +1,15 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ADManagerAPI.Models;
-using ADManagerAPI.Services.Utilities;
 using ADManagerAPI.Services.Interfaces;
-using Microsoft.AspNetCore.SignalR;
-using ADManagerAPI.Hubs;
+using ADManagerAPI.Services.Parse;
 
 namespace ADManagerAPI.Controllers
 {
     [ApiController]
     [Route("api/import")]
-    [Authorize(Roles = "Informatique")]
+    [Authorize]
+    [RequestSizeLimit(100 * 1024 * 1024)] // Autorise les fichiers jusqu'à 100 Mo
     public class FileImportController : ControllerBase
     {
         private readonly ILdapService _ldapService;
@@ -18,24 +17,24 @@ namespace ADManagerAPI.Controllers
         private readonly IConfigService _configService;
         private readonly ISignalRService _signalRService;
         private readonly ILogger<FileImportController> _logger;
+        private readonly ISpreadsheetImportService _importService;
 
         public FileImportController(
             ILdapService ldapService,
             ILogService logService,
             IConfigService configService,
             ISignalRService signalRService,
-            ISpreadsheetImportService csvManagerService,
             ILogger<FileImportController> logger,
-            IHubContext<CsvImportHub> csvImportHubContext,
-            IServiceScopeFactory serviceScopeFactory)
+            ISpreadsheetImportService importService)
         {
             _ldapService = ldapService;
             _logService = logService;
             _configService = configService;
             _signalRService = signalRService;
             _logger = logger;
+            _importService = importService;
         }
-        
+
 
         [HttpGet("configs")]
         public async Task<IActionResult> GetSavedConfigs()
@@ -62,23 +61,10 @@ namespace ADManagerAPI.Controllers
             {
                 _logService.Log("IMPORT", "Début du traitement de la requête SaveConfig avec DTO");
 
-                if (configDto == null)
+               var validationResult = ValidateConfigDto(configDto);
+                if (!validationResult.IsValid)
                 {
-                    _logService.Log("IMPORT", "Le DTO reçu est null");
-                    return BadRequest(new { error = "Aucune donnée reçue" });
-                }
-
-                _logService.Log("IMPORT",
-                    $"DTO reçu: Name={configDto.Name}, ObjectType={configDto.ConfigData?.ObjectTypeStr}");
-
-                if (string.IsNullOrEmpty(configDto.Name))
-                {
-                    return BadRequest(new { error = "Le nom de la configuration est requis." });
-                }
-
-                if (configDto.ConfigData == null)
-                {
-                    return BadRequest(new { error = "Les données de configuration sont requises." });
+                    return BadRequest(new { error = validationResult.ErrorMessage });
                 }
 
                 var configData = configDto.ToSavedImportConfig();
@@ -101,8 +87,7 @@ namespace ADManagerAPI.Controllers
                 return BadRequest(new
                 {
                     error = ex.Message,
-                    stack = ex.StackTrace,
-                    innerException = ex.InnerException?.Message
+                    details = ex.StackTrace
                 });
             }
         }
@@ -140,112 +125,148 @@ namespace ADManagerAPI.Controllers
             }
         }
 
+
+        [Authorize]                                       
+        [DisableRequestSizeLimit]                        
+        [RequestSizeLimit(100 * 1024 * 1024)]             
+        [Consumes("multipart/form-data")]                 
         [HttpPost("upload-file")]
-        public async Task<IActionResult> UploadFile(IFormFile file, [FromForm] string configId, [FromForm] string? connectionId = null)
+        public async Task<IActionResult> UploadFile(
+            [FromForm] IFormFile file,          
+            [FromForm] string configId,
+            [FromForm] string connectionId)
         {
             try
             {
-                _logService.Log("IMPORT", $"Début de l'upload du fichier {file?.FileName} via HTTP avec configId: {configId}");
-                
+  
                 if (file == null)
                 {
-                    _logService.Log("IMPORT", "Échec de l'upload: le fichier est null");
-                    return BadRequest(new { error = "Le fichier est null" });
+                     return BadRequest(new { error = "Aucun fichier fourni" });
                 }
                 
-                if (file.Length == 0)
+                 var (isValidConfig, configErrorMessage, config) = await GetAndValidateConfig(configId);
+                if (!isValidConfig || config == null)
                 {
-                    _logService.Log("IMPORT", "Échec de l'upload: le fichier est vide (taille 0)");
-                    return BadRequest(new { error = "Le fichier est vide" });
-                }
-                
-                _logService.Log("IMPORT", $"Fichier reçu: {file.FileName}, taille: {file.Length} octets, type: {file.ContentType}");
-
-                _logService.Log("IMPORT", $"Recherche de la configuration avec l'ID: {configId}");
-                ImportConfig config;
-                var savedConfigs = await _configService.GetSavedImportConfigs();
-                var savedConfig = savedConfigs.FirstOrDefault(c => c.Id == configId);
-                if (savedConfig == null)
-                {
-                    _logService.Log("IMPORT", $"Configuration non trouvée: {configId}");
-                    return BadRequest(new { error = "Configuration non trouvée" });
-                }
-                
-                _logService.Log("IMPORT", $"Configuration trouvée: {savedConfig.Name}");
-                config = savedConfig.ConfigData;
-                
-                _logService.Log("IMPORT", "Validation de la configuration...");
-                config = ImportConfigHelpers.EnsureValidConfig(config, _logger);
-                
-                if (!string.IsNullOrEmpty(connectionId))
-                {
-                    _logService.Log("IMPORT", $"ConnectionId fourni: {connectionId}, traitement du fichier {file.FileName} en cours...");
-                    
-                    // Attend que le traitement du fichier soit terminé avant de continuer.
-                    await _signalRService.ProcessCsvUpload(connectionId, file.OpenReadStream(), file.FileName, config);
-                    _logService.Log("IMPORT", $"Traitement du fichier {file.FileName} terminé pour la connexion {connectionId}. Le client peut maintenant appeler StartAnalysis.");
-                    
-                    // La ligne suivante est supprimée car le client (TypeScript) est responsable d'appeler StartAnalysis sur le Hub.
-                    // await _csvImportHubContext.Clients.Client(connectionId).SendAsync("StartAnalysis", configId);
-                }
-                else
-                {
-                    // Gérer le cas où connectionId est null ou vide si nécessaire, 
-                    // par exemple, effectuer une analyse synchrone ou retourner une erreur.
-                    _logService.Log("WARN", "ConnectionId non fourni pour l'upload. L'analyse via SignalR ne sera pas automatiquement déclenchée par le serveur après l'upload.");
-                    // Pour l'instant, on suppose que le client gérera l'appel à StartAnalysis séparément ou que ce cas n'est pas attendu.
-                    // Si une analyse doit quand même se produire, il faudrait appeler CsvManagerService.AnalyzeCsvContentAsync ici directement.
-                    // var analysisResult = await _csvManagerService.AnalyzeCsvContentAsync(file.OpenReadStream(), file.FileName, config);
-                    // Et ensuite retourner un résultat basé sur analysisResult.
+                    _logger.LogWarning($"⚠️ [FileImportController] Configuration invalide ou manquante: {configErrorMessage}");
+                    return BadRequest(new { error = configErrorMessage });
                 }
 
+                // Lancer le traitement du fichier par le service d'importation
+                await _signalRService.ProcessCsvUpload(
+                    connectionId, 
+                    file.OpenReadStream(), 
+                    file.FileName, 
+                    config.ConfigData
+                );
+                
                 return Ok(new { 
-                    message = $"Upload du fichier {file.FileName} reçu, l'analyse va démarrer.", 
-                    isAnalysisStarted = !string.IsNullOrEmpty(connectionId)
+                    message = "Fichier reçu et analyse lancée", 
+                    fileName = file.FileName, 
+                    fileSize = file.Length, 
+                    timestamp = DateTime.Now,
+                    analysisInitiated = true
                 });
             }
             catch (Exception ex)
             {
-                _logService.Log("IMPORT", $"Erreur lors de l'upload du fichier: {ex.Message}");
-                _logService.Log("IMPORT", $"Stack trace: {ex.StackTrace}");
-                if (ex.InnerException != null)
-                {
-                    _logService.Log("IMPORT", $"Inner exception: {ex.InnerException.Message}");
-                }
-                return BadRequest(new { error = ex.Message });
+                _logger.LogError(ex, "❌ [FileImportController] Erreur lors de l\'upload du fichier");
+                _logService.Log("IMPORT", $"Erreur lors de l\'upload du fichier: {ex.Message}");
+                return StatusCode(500, new { error = "Erreur interne du serveur lors de l\'upload du fichier", details = ex.Message });
             }
         }
 
+
+
         [HttpGet("system/check-websocket")]
         [Authorize]
-        public IActionResult CheckWebSocketAvailability()
+        public async Task<IActionResult> CheckWebSocketAvailability()
         {
-            _logService.Log("SYSTEM", "Vérification de la disponibilité WebSocket demandée.");
-            return Ok(new { message = "WebSocket endpoint available" });
+            _logService.Log("SYSTEM", "Vérification de la disponibilité de WebSocket via SignalR.");
+            bool isConnected = await _signalRService.IsConnectedAsync(); // Correction ici
+            if (isConnected)
+            {
+                return Ok(new { status = "Connecté", message = "SignalR (WebSocket) semble fonctionner." });
+            }
+            else
+            {
+                return StatusCode(503, new { status = "Non connecté", message = "SignalR (WebSocket) ne semble pas connecté." });
+            }
         }
 
         [HttpGet("system/check-signalr")]
         [Authorize]
-        public IActionResult CheckSignalRAvailability()
+        public async Task<IActionResult> CheckSignalRAvailability()
         {
-            _logService.Log("SYSTEM", "Vérification de la disponibilité SignalR demandée.");
-            return Ok(new { message = "SignalR endpoint potentially available" });
+            _logService.Log("SYSTEM", "Vérification de la disponibilité de SignalR.");
+            bool isConnected = await _signalRService.IsConnectedAsync(); // Correction ici
+            if (isConnected)
+            {
+                return Ok(new { status = "Connecté", message = "SignalR semble fonctionner." });
+            }
+            else
+            {
+                return StatusCode(503, new { status = "Non connecté", message = "SignalR ne semble pas connecté." });
+            }
         }
 
-        [HttpGet("debug-auth")]
-        [Authorize]
-        public IActionResult DebugAuth()
+
+
+        // --- Méthodes d'aide privées ---
+        private (bool IsValid, string ErrorMessage) ValidateConfigDto(SavedImportConfigDto configDto)
         {
-            var isAuthenticated = User.Identity?.IsAuthenticated ?? false;
-            var authHeader = Request.Headers["Authorization"].FirstOrDefault();
+            _logger.LogInformation($"[ValidateConfigDto] Début de la validation pour {configDto.Name}");
+            if (string.IsNullOrEmpty(configDto.Name))
+            {
+                _logger.LogWarning("[ValidateConfigDto] Nom de configuration manquant.");
+                return (false, "Le nom de la configuration est requis.");
+            }
+
+            if (configDto.ConfigData == null)
+            {
+                _logger.LogWarning("[ValidateConfigDto] Données de configuration (ConfigData) manquantes.");
+                return (false, "Les données de configuration sont requises.");
+            }
             
-            return Ok(new { 
-                isAuthenticated,
-                userName = User.Identity?.Name,
-                claims = User.Claims.Select(c => new { c.Type, c.Value }).ToList(),
-                authHeader = authHeader != null ? "Present" : "Missing",
-                authHeaderValue = !string.IsNullOrEmpty(authHeader) ? authHeader.Substring(0, Math.Min(20, authHeader.Length)) + "..." : null
-            });
+            if (configDto.ConfigData.HeaderMapping == null || !configDto.ConfigData.HeaderMapping.Any())
+            {
+                _logger.LogWarning("[ValidateConfigDto] Mappages d'en-têtes manquants.");
+                return (false, "Au moins un mappage d'en-tête est requis.");
+            }
+
+            _logger.LogInformation("[ValidateConfigDto] Validation de la configuration réussie.");
+            return (true, string.Empty);
+        }
+
+        private (bool IsValid, string ErrorMessage) ValidateUploadedFile(IFormFile file)
+        {
+            if (file == null || file.Length == 0)
+            {
+                return (false, "Aucun fichier n'a été sélectionné ou le fichier est vide.");
+            }
+
+            var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+            if (extension != ".csv" && extension != ".xlsx")
+            {
+                return (false, "Seuls les fichiers CSV ou XLSX sont autorisés.");
+            }
+            return (true, string.Empty);
+        }
+
+        private async Task<(bool IsValid, string ErrorMessage, SavedImportConfig Config)> GetAndValidateConfig(string configId)
+        {
+            if (string.IsNullOrEmpty(configId))
+            {
+                return (false, "L'ID de configuration est manquant.", null);
+            }
+
+            var configs = await _configService.GetSavedImportConfigs();
+            var config = configs.FirstOrDefault(c => c.Id == configId);
+
+            if (config == null)
+            {
+                return (false, $"Configuration avec l'ID '{configId}' non trouvée.", null);
+            }
+            return (true, string.Empty, config);
         }
     }
 } 

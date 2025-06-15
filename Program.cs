@@ -1,182 +1,135 @@
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.OpenApi.Models;
+using System.Text;
+using System.Text.Encodings.Web;
+using ADManagerAPI.Config;
+using ADManagerAPI.Hubs;
 using ADManagerAPI.Services;
 using ADManagerAPI.Services.Interfaces;
-using ADManagerAPI.Hubs;
 using ADManagerAPI.Services.Parse;
-using Microsoft.IdentityModel.Tokens;
-using System.Net;
-using System.Net.Sockets;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.DataProtection;
-using ADManagerAPI.Config;
-
-// Récupérer la première adresse IPv4 non-loopback
-IPAddress localIP = Dns.GetHostAddresses(Dns.GetHostName())
-    .FirstOrDefault(ip => ip.AddressFamily == AddressFamily.InterNetwork
-                        && !IPAddress.IsLoopback(ip));
-
-if (localIP == null)
-{
-    localIP = IPAddress.Loopback;
-    Console.WriteLine("Aucune IP IPv4 trouvée, utilisation de 127.0.0.1.");
-}
-
-var ipAddressString = localIP.ToString();
-Console.WriteLine($"Adresse IP locale utilisée: {ipAddressString}");
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.WebHost.UseStaticWebAssets();
 
-// Définir les ports d'écoute
-var port = 5021;
-builder.WebHost.UseUrls($"http://{ipAddressString}:{port}", $"http://localhost:{port}");
+//──────────────── HOSTING
+const int Port = 5022;
+builder.WebHost.UseStaticWebAssets().UseUrls($"http://localhost:{Port}");
 
-builder.Services.AddControllers();
+//──────────────── MVC + JSON
+builder.Services.AddControllers()
+       .AddJsonOptions(o =>
+       {
+           o.JsonSerializerOptions.Encoder       = JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
+           o.JsonSerializerOptions.WriteIndented = true;
+       });
+
+//──────────────── UPLOAD (100 MB)
+const long MaxUpload = 100 * 1024 * 1024;
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
+{
+    o.MultipartBodyLengthLimit = MaxUpload;
+    o.MemoryBufferThreshold    = int.MaxValue;
+});
+builder.Services.Configure<Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerOptions>(o =>
+    o.Limits.MaxRequestBodySize = MaxUpload);
+
+//──────────────── CORS localhost
+builder.Services.AddCors(opts =>
+{
+    opts.AddPolicy("AllowLocalhost", policy =>
+        policy.SetIsOriginAllowed(origin => new Uri(origin).IsLoopback)
+              .AllowAnyHeader()     // ← règle clé pour SignalR
+              .AllowAnyMethod()
+              .AllowCredentials());
+});
+
+//──────────────── Swagger + JWT helper
 builder.Services.AddEndpointsApiExplorer();
-
 builder.Services.AddSwaggerGen(c =>
 {
-    c.SwaggerDoc("v1", new OpenApiInfo 
-    { 
-        Title = "ADManagerAPI", 
-        Version = "v1" 
+    c.SwaggerDoc("v1", new OpenApiInfo { Title = "ADManagerAPI", Version = "v1" });
+    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Description = "JWT – Authorization: Bearer {token}",
+        Name        = "Authorization",
+        In          = ParameterLocation.Header,
+        Type        = SecuritySchemeType.ApiKey,
+        Scheme      = "Bearer"
+    });
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        { new OpenApiSecurityScheme
+            { Reference = new OpenApiReference{ Type = ReferenceType.SecurityScheme, Id = "Bearer" } },
+          Array.Empty<string>() }
     });
 });
 
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("AllowSpecificOrigin", builder =>
-        builder.WithOrigins(
-                "http://localhost:5173",  // Vite dev server
-                "http://localhost:5174",  // Fallback port
-                "http://localhost:4173",  // Vite preview
-                "http://localhost:3000",   // Autre port possible
-                "http://127.0.0.1:5173",  // Variante localhost
-                "http://127.0.0.1:5174",  // Variante localhost
-                "http://127.0.0.1:3000"   // Variante localhost
-            )
-            .AllowAnyMethod()
-            .AllowAnyHeader()
-            .AllowCredentials()
-            .SetIsOriginAllowed(origin => true)); // Permettre toutes les origines pour le débogage
-});
+//──────────────── DEPENDENCY INJECTION
+builder.Services.AddSingleton<ILogService,            LogService>();
+builder.Services.AddSingleton<IConfigService,         ConfigService>();
+builder.Services.AddSingleton<ISignalRService,        SignalRService>();
+builder.Services.AddSingleton<ISpreadsheetDataParser, CsvParserService>();
+builder.Services.AddSingleton<ISpreadsheetDataParser, ExcelParserService>();
 
-// Enregistrement de SignalR
-builder.Services.AddSignalR(options =>
-{
-    options.EnableDetailedErrors = true;
-    options.MaximumReceiveMessageSize = null; // Pas de limite pour les messages
-    options.StreamBufferCapacity = 20; // Pour le streaming
-});
-
-// Enregistrement des services
-builder.Services.AddSingleton<LogService>();
-builder.Services.AddScoped<ILdapService, LdapService>();
-builder.Services.AddScoped<ILogService, LogService>();
-builder.Services.AddSingleton<IConfigService, ConfigService>();
-builder.Services.AddScoped<IFolderManagementService, FolderManagementService>();
+builder.Services.AddScoped<ILdapService,              LdapService>();
+builder.Services.AddScoped<IFolderManagementService,  FolderManagementService>();
 builder.Services.AddScoped<ISpreadsheetImportService, SpreadsheetImportService>();
-builder.Services.AddSingleton<ISignalRService, SignalRService>();
+builder.Logging.AddFilter("Microsoft.AspNetCore.Routing.EndpointMiddleware", LogLevel.Debug);
+builder.Logging.AddFilter("Microsoft.AspNetCore.Server.Kestrel",            LogLevel.Debug);
+// Teams (conditionnel) — inchangé
 
-//PARSER
-builder.Services.AddSingleton<ISpreadsheetParserService, CsvParserService>();
-builder.Services.AddSingleton<ISpreadsheetParserService, ExcelParserService>();
-builder.Services.AddScoped<ISpreadsheetImportService, SpreadsheetImportService>();
+var clientSecret      = builder.Configuration["AzureAD:ClientSecret"];
 
-// Configuration de l'authentification Azure AD
-builder.Services.AddAuthentication(options =>
-{
-    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-})
-.AddJwtBearer(options =>
-{
-    options.Authority = "https://login.microsoftonline.com/a70e01a3-ae69-4d17-ad6d-407f168bb45e/v2.0";
-    options.Audience = "api://114717d2-5cae-4569-900a-efa4e58eb3f5";
-    options.RequireHttpsMetadata = false; // Pour le développement
-    options.SaveToken = true;
-    
-    options.TokenValidationParameters = new TokenValidationParameters
-    {
-        ValidIssuers = new[]
-        {
-            "https://login.microsoftonline.com/a70e01a3-ae69-4d17-ad6d-407f168bb45e/v2.0",
-            "https://sts.windows.net/a70e01a3-ae69-4d17-ad6d-407f168bb45e/"
-        },
-        ValidateIssuer = true,
-        ValidateAudience = true,
-        ValidAudiences = new[] { 
-            "api://114717d2-5cae-4569-900a-efa4e58eb3f5",
-            "114717d2-5cae-4569-900a-efa4e58eb3f5"  // Ajout du GUID seul pour supporter les deux formats
-        },
-        ValidateLifetime = true,
-        ValidateIssuerSigningKey = true,
-        ClockSkew = TimeSpan.FromMinutes(5) // Tolérance pour les différences d'horloge
-    };
-    
-    // Logs détaillés pour le débogage de l'authentification
-    options.Events = new JwtBearerEvents
-    {
-        OnAuthenticationFailed = context =>
-        {
-            Console.WriteLine($"Échec d'authentification: {context.Exception.Message}");
-            return Task.CompletedTask;
-        },
-        OnTokenValidated = context =>
-        {
-            Console.WriteLine($"Token validé pour: {context.Principal?.Identity?.Name}");
-            return Task.CompletedTask;
-        },
-        OnChallenge = context =>
-        {
-            Console.WriteLine($"Challenge d'authentification émis: {context.Error}");
-            return Task.CompletedTask;
-        },
-        OnMessageReceived = context =>
-        {
-            var accessToken = context.Request.Query["access_token"];
-            var path = context.HttpContext.Request.Path;
-            
-            if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
-            {
-                context.Token = accessToken;
-                Console.WriteLine("Token extrait du paramètre de requête pour SignalR");
-            }
-            
-            return Task.CompletedTask;
-        }
-    };
-});
 
-// Configuration de l'autorisation - les utilisateurs doivent être authentifiés par défaut
-builder.Services.AddAuthorization(options =>
-{
-    options.DefaultPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
-        .RequireAuthenticatedUser() // Exiger un utilisateur authentifié
-        .Build();
-    
-    // Configurer la politique par défaut mais avec des exceptions
-    options.FallbackPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
-        .RequireAuthenticatedUser()
-        .Build();
-        
-    // Ajouter une politique anonyme pour les endpoints publics
-    options.AddPolicy("AllowAnonymous", policy => policy.RequireAssertion(_ => true));
-});
+builder.Services.AddScoped<ITeamsGroupService,    ADManagerAPI.Services.Teams.TeamsGroupService>();
+builder.Services.AddScoped<ITeamsIntegrationService, ADManagerAPI.Services.Teams.TeamsIntegrationService>();
 
+
+Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+//──────────────── AUTHENTICATION Azure AD
+var aad = builder.Configuration.GetSection("AzureAd");
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+       .AddJwtBearer(o =>
+       {
+           o.Authority            = $"https://login.microsoftonline.com/{aad["TenantId"]}/v2.0";
+           o.Audience             = aad["ClientId"];
+           o.SaveToken            = true;
+           o.RequireHttpsMetadata = false; // dev only
+           o.TokenValidationParameters = new TokenValidationParameters
+           {
+               ValidIssuers = new[]
+               {
+                   $"https://login.microsoftonline.com/{aad["TenantId"]}/v2.0",
+                   $"https://sts.windows.net/{aad["TenantId"]}/"
+               },
+               ValidAudiences = new[] { aad["ClientId"], $"api://{aad["ClientId"]}" },
+               NameClaimType  = "name",
+               RoleClaimType  = "roles",
+               ClockSkew      = TimeSpan.FromMinutes(5)
+           };
+       });
+builder.Services.AddAuthorization();
+
+//──────────────── DATA-PROTECTION + helpers
 builder.Services.AddDataProtection()
-    .SetApplicationName("ADManagerAPI")
-    .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ADManagerAPI", "Keys")));
-
-// EncryptionHelper n'a pas de dépendances sur IConfigService, donc on peut l'enregistrer en premier
+       .SetApplicationName("ADManagerAPI")
+       .PersistKeysToFileSystem(
+           new DirectoryInfo(Path.Combine(
+               Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+               "ADManagerAPI", "Keys")));
 builder.Services.AddSingleton<EncryptionHelper>();
-
-// Enregistrer d'abord IConfigService comme singleton pour que LdapSettingsProvider puisse l'utiliser
-builder.Services.AddSingleton<IConfigService, ConfigService>();
-
-// Puis enregistrer LdapSettingsProvider qui dépend de IConfigService
 builder.Services.AddSingleton<LdapSettingsProvider>();
 
+//──────────────── SIGNALR
+builder.Services.AddSignalR(o =>
+{
+    o.EnableDetailedErrors      = true;
+    o.MaximumReceiveMessageSize = null;
+    o.StreamBufferCapacity      = 20;
+});
+
+//──────────────── PIPELINE
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -185,74 +138,22 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-string configDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Config");
-if (!Directory.Exists(configDir))
+// Chrome PNA — header « Access-Control-Allow-Private-Network »
+app.Use(async (ctx, next) =>
 {
-    Directory.CreateDirectory(configDir);
-    app.Logger.LogInformation($"Répertoire de configuration créé: {configDir}");
-}
-
-// IMPORTANT: Appliquer CORS avant l'authentification pour les requêtes préflight
-app.UseCors("AllowSpecificOrigin");
-
-app.UseHttpsRedirection();
-app.UseAuthentication();
-app.UseAuthorization();
-
-// Middleware de journalisation pour le débogage
-app.Use(async (context, next) =>
-{
-    app.Logger.LogInformation($"Requête depuis: {context.Connection.RemoteIpAddress} - Chemin: {context.Request.Path}");
-
-    // Exempter certains endpoints de l'authentification
-    var path = context.Request.Path.Value?.ToLower();
-    if (path == "/api/test/public")
-    {
-        app.Logger.LogInformation("Endpoint public détecté, contournement de l'authentification");
-        context.Request.Headers["SkipAuthorization"] = "true";
-    }
-
-    // Log des headers pour le débogage
-    if (app.Environment.IsDevelopment())
-    {
-        app.Logger.LogDebug("Headers de la requête:");
-        foreach (var header in context.Request.Headers)
-        {
-            if (header.Key.ToLower() != "authorization") // Ne pas logger le token complet
-            {
-                app.Logger.LogDebug($"  {header.Key}: {header.Value}");
-            }
-            else
-            {
-                app.Logger.LogDebug($"  {header.Key}: [PRÉSENT]");
-            }
-        }
-    }
-
-    if (context.User.Identity != null && context.User.Identity.IsAuthenticated)
-    {
-        app.Logger.LogInformation($"Utilisateur authentifié: {context.User.Identity.Name}");
-        
-        // Afficher les claims pour le débogage
-        if (app.Environment.IsDevelopment())
-        {
-            foreach (var claim in context.User.Claims)
-            {
-                app.Logger.LogDebug($"  Claim: {claim.Type} = {claim.Value}");
-            }
-        }
-    }
-    else
-    {
-        app.Logger.LogInformation("Utilisateur non authentifié");
-    }
-
+    if (ctx.Request.Headers.ContainsKey("Access-Control-Request-Private-Network"))
+        ctx.Response.Headers["Access-Control-Allow-Private-Network"] = "true";
     await next();
 });
 
-app.MapControllers();
+app.UseRouting();
+app.UseCors("AllowLocalhost");   // CORS d’abord
+app.UseAuthentication();
+app.UseAuthorization();
 
-app.MapHub<CsvImportHub>("/hubs/csvImportHub");
+app.MapControllers();
+app.MapHub<CsvImportHub>   ("/hubs/csvImportHub");
 app.MapHub<NotificationHub>("/hubs/notificationHub");
 
+app.Logger.LogInformation($"ADManagerAPI démarré sur http://localhost:{Port}");
 app.Run();

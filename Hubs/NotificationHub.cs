@@ -13,7 +13,7 @@ namespace ADManagerAPI.Hubs
             await base.OnConnectedAsync();
         }
 
-        public override async Task OnDisconnectedAsync(Exception exception)
+        public override async Task OnDisconnectedAsync(Exception? exception)
         {
             logger.LogInformation($"Client déconnecté du NotificationHub: {Context.ConnectionId}");
             

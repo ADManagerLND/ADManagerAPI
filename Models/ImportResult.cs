@@ -5,24 +5,78 @@ namespace ADManagerAPI.Models
 {
     public class ImportResult
     {
-        public bool Success { get; set; } = true;
-        public int TotalProcessed { get; set; }
-        public int TotalSucceeded { get; set; }
-        public int TotalFailed { get; set; }
-        public string Details { get; set; } = "";
-        public ImportSummary Summary { get; set; } = new ImportSummary();
-        public List<ImportActionResult> ActionResults { get; set; } = [];
-        public int CreatedCount { get; set; }
-        public int UpdatedCount { get; set; }
-        public int DeletedCount { get; set; }
-        public int MovedCount { get; set; }
-        public int ErrorCount { get; set; }
-    }
+        public bool Success { get; set; }
 
-    public class ImportError
-    {
-        public string Field { get; set; } = "";
-        public string Message { get; set; } = "";
-        public string Value { get; set; } = "";
+        public string Message { get; set; } = string.Empty;
+
+        public int TotalActions { get; set; }
+
+        public int ProcessedCount { get; set; }
+
+        public int SuccessCount { get; set; }
+
+        public int ErrorCount { get; set; }
+
+        public int CreateCount { get; set; }
+        
+        public int UpdateCount { get; set; }
+        
+        public int DeleteCount { get; set; }
+        
+        public int CreateOUCount { get; set; }
+        
+        public int DeleteOUCount { get; set; }
+
+        public int MoveCount { get; set; }
+
+        public int ProvisionShareCount { get; set; }
+        
+        public int CreateClassGroupFolderCount { get; set; }
+
+        public int CreateTeamGroupCount { get; set; }
+
+        public int CreatedTeams { get; set; }
+
+        public List<string> Messages { get; set; } = new List<string>();
+        
+        public List<string> Warnings { get; set; } = new List<string>();
+
+        public List<string> Errors { get; set; } = new List<string>();
+
+        public List<ImportActionResult> Results { get; set; } = new List<ImportActionResult>();
+
+        public int TotalProcessed => ProcessedCount;
+
+        public int TotalSucceeded => SuccessCount;
+
+        public int TotalFailed => ErrorCount;
+
+        public List<ImportActionResult> Details
+        {
+            get => Results;
+            set => Results = value;
+        }
+
+        public ImportSummary Summary
+        {
+            get
+            {
+                return new ImportSummary
+                {
+                    TotalObjects = TotalActions,
+                    ProcessedCount = ProcessedCount,
+                    CreateCount = CreateCount,
+                    UpdateCount = UpdateCount,
+                    DeleteCount = DeleteCount,
+                    ErrorCount = ErrorCount,
+                    CreateOUCount = CreateOUCount,
+                    DeleteOUCount = DeleteOUCount,
+                    MoveCount = MoveCount,
+                    ProvisionUserShareCount = ProvisionShareCount,
+                    CreateClassGroupFolderCount = CreateClassGroupFolderCount,
+                    CreateTeamGroupCount = CreateTeamGroupCount
+                };
+            }
+        }
     }
 } 

@@ -1,11 +1,10 @@
 namespace ADManagerAPI.Services.Parse;
 
-public interface ISpreadsheetParserService
+public interface ISpreadsheetDataParser
 {
-    /// <summary>
-    /// Lit un flux CSV ou Excel et renvoie une liste de lignes,
-    /// chaque ligne étant un dictionnaire "nomDeColonne → valeur".
-    /// </summary>
+
+    bool CanHandle(string fileExtension);
+    
     Task<List<Dictionary<string,string>>> ParseAsync(
         Stream fileStream,
         string fileName,

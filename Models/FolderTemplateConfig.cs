@@ -4,27 +4,28 @@ namespace ADManagerAPI.Models
 {
     public class RemoteServerSettings
     {
-        public string? TargetServerName { get; set; } // Null or empty means local execution
+        public string? TargetServerName { get; set; }
         public bool UseExplicitCredentials { get; set; } = false;
-        public string? RemoteUser { get; set; } // Required if UseExplicitCredentials is true
-        public string? RemotePassword { get; set; } // Required if UseExplicitCredentials is true. STORE SECURELY!
+        public string? RemoteUser { get; set; }
+        public string? RemotePassword { get; set; }
     }
 
     public class FolderManagementSettings
     {
-        public string BaseStudentPath { get; set; } = "D:\\Students"; // Example default
-        public string BaseClassGroupPath { get; set; } = "D:\\Classes"; // Example default
+        public string BaseStudentPath { get; set; } = "D:\\Students";
+        public string BaseClassGroupPath { get; set; } = "D:\\Classes";
         public List<FolderTemplate> Templates { get; set; } = new List<FolderTemplate>();
         public RemoteServerSettings? RemoteServerSettings { get; set; }
+        public object? AdminShareLetter { get; set; } = "C:";
     }
 
     public class FolderPermission
     {
-        public string IdentityReference { get; set; } // e.g., "DOMAIN\\UserOrGroup", "BUILTIN\\Administrators", "NT AUTHORITY\\SYSTEM"
-        public string FileSystemRights { get; set; } // e.g., "FullControl", "Modify", "ReadAndExecute", "Write", "Read"
-        public string AccessControlType { get; set; } // "Allow" or "Deny"
-        public string? InheritanceFlags { get; set; } // e.g., "None", "ContainerInherit", "ObjectInherit"
-        public string? PropagationFlags { get; set; } // e.g., "None", "NoPropagateInherit", "InheritOnly"
+        public string IdentityReference { get; set; }
+        public string FileSystemRights { get; set; }
+        public string AccessControlType { get; set; }
+        public string? InheritanceFlags { get; set; }
+        public string? PropagationFlags { get; set; }
     }
 
     public class SubFolderDefinition
@@ -36,8 +37,8 @@ namespace ADManagerAPI.Models
     public class FolderTemplate
     {
         public string Name { get; set; }
-        public TemplateType Type { get; set; } // Student or ClassGroup
-        public List<SubFolderDefinition> SubFolders { get; set; } = new List<SubFolderDefinition>(); // Changed from List<string> SubPaths
+        public TemplateType Type { get; set; } 
+        public List<SubFolderDefinition> SubFolders { get; set; } = new List<SubFolderDefinition>(); 
     }
 
     public enum TemplateType
@@ -46,7 +47,7 @@ namespace ADManagerAPI.Models
         ClassGroup
     }
 
-    public enum UserRole // This seems more related to FSRM or general user classification than just folder templates
+    public enum UserRole 
     {
         Student,
         Professor,
@@ -55,17 +56,15 @@ namespace ADManagerAPI.Models
 
     public class StudentInfo
     {
-        public string Id { get; set; } // e.g., student number or unique identifier
+        public string Id { get; set; }
         public string Name { get; set; }
-        // Add other relevant properties that might be used in folder names or paths
-        // For example: public string Email { get; set; }
+
     }
 
     public class ClassGroupInfo
     {
-        public string Id { get; set; } // e.g., class code or unique identifier
+        public string Id { get; set; } 
         public string Name { get; set; }
-        // Add other relevant properties
-        // For example: public string AcademicYear { get; set; }
+
     }
 } 

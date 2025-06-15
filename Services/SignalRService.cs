@@ -6,15 +6,10 @@ using ADManagerAPI.Services.Interfaces;
 using LogEntry = ADManagerAPI.Models.LogEntry;
 using ModelLogLevel = ADManagerAPI.Models.LogLevel;
 using MsLogLevel = Microsoft.Extensions.Logging.LogLevel;
-using Microsoft.Extensions.Logging;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 
 namespace ADManagerAPI.Services
 {
-    /// <summary>
-    /// Service qui gère les communications en temps réel via SignalR
-    /// </summary>
     public class SignalRService : ISignalRService
     {
         private readonly IHubContext<CsvImportHub> _csvImportHubContext;
@@ -23,7 +18,6 @@ namespace ADManagerAPI.Services
         private readonly IServiceScopeFactory _serviceScopeFactory;
         private readonly IConfigService _configService;
         
-        // Dictionnaire pour stocker l'état de progression des opérations par connexion
         private static readonly ConcurrentDictionary<string, ImportProgress> _progressState = new();
 
         public SignalRService(
@@ -42,7 +36,6 @@ namespace ADManagerAPI.Services
 
         public async Task<bool> IsConnectedAsync()
         {
-            // SignalR gère automatiquement les connexions, donc on peut supposer que le service est toujours connecté
             return await Task.FromResult(true);
         }
 
@@ -98,14 +91,6 @@ namespace ADManagerAPI.Services
                     analysis = result.Analysis,
                     success = result.Success
                 }
-            });
-            
-            // Envoyer un log de succès
-            await _csvImportHubContext.Clients.Client(connectionId).SendAsync("ReceiveLog", new LogEntry
-            {
-                LevelText = "success",
-                Level = ModelLogLevel.Information,
-                Message = "Analyse terminée avec succès"
             });
         }
         
@@ -223,15 +208,8 @@ namespace ADManagerAPI.Services
             _logger.LogInformation($"Traitement de l'upload du fichier {fileName} pour la connexion {connectionId}");
             try
             {
-                // Envoyer un log de début de traitement
-                await _csvImportHubContext.Clients.Client(connectionId).SendAsync("ReceiveLog", new LogEntry
-                {
-                    LevelText = "info",
-                    Message = $"Traitement du fichier {fileName}...",
-                    Level = ModelLogLevel.Information
-                });
-                
-                // Envoyer la progression initiale
+
+                // Envoyer la progression initiale (qui inclut déjà le log)
                 await SendCsvAnalysisProgressAsync(connectionId, 10, "processing", $"Traitement du fichier {fileName}...");
                 
                 // Valider le flux du fichier
@@ -252,6 +230,18 @@ namespace ADManagerAPI.Services
                 // Appeler la méthode d'analyse du CsvManagerService
                 var analysisResult = await csvManagerService.AnalyzeSpreadsheetContentAsync(fileStream, fileName, config);
                 
+                // Stockage déjà effectué dans AnalyzeSpreadsheetContentAsync
+                // Le stockage de l'analyse est déjà géré dans le service d'analyse
+                // Pas besoin de double stockage ici
+                if (analysisResult.Success && analysisResult.Analysis != null)
+                {
+                    _logger.LogInformation($"[ProcessCsvUpload] ✅ Analyse réussie avec {analysisResult.Analysis.Actions?.Count ?? 0} actions pour connectionId: {connectionId}");
+                }
+                else
+                {
+                    _logger.LogWarning($"[ProcessCsvUpload] ⚠️ Analyse échouée. Success: {analysisResult.Success}, Analysis null: {analysisResult.Analysis == null}");
+                }
+                
                 // Mettre à jour la progression après l'analyse
                 await SendCsvAnalysisProgressAsync(connectionId, 70, "analyzing", "Analyse terminée, préparation des résultats...");
                 
@@ -261,7 +251,7 @@ namespace ADManagerAPI.Services
                     if (analysisResult.TableData != null && !string.IsNullOrEmpty(connectionId))
                     {
                         // Stocker les données CSV brutes parsées pour une utilisation ultérieure par le Hub
-                        ADManagerAPI.Models.FileDataStore.SetCsvData(analysisResult.TableData, connectionId);
+                        ADManagerAPI.Utils.FileDataStore.SetCsvData(analysisResult.TableData, connectionId);
                         _logger.LogInformation($"Données CSV brutes ({analysisResult.TableData.Count} lignes) de {fileName} stockées dans CsvDataStore pour connectionId: {connectionId}");
                     }
                     else
@@ -504,6 +494,73 @@ namespace ADManagerAPI.Services
             await _csvImportHubContext.Clients
                 .Client(connectionId)
                 .SendAsync("ReceiveLog", logEntry);
+        }
+
+        // Implémentation des méthodes de l'interface ISignalRService
+        public async Task SendImportStartedAsync(string? connectionId, int totalActions)
+        {
+            if (string.IsNullOrEmpty(connectionId))
+            {
+                _logger.LogWarning("ID de connexion non fourni pour l'envoi de notification de démarrage");
+                return;
+            }
+            
+            await _csvImportHubContext.Clients.Client(connectionId).SendAsync("ReceiveProgress", new ImportProgress
+            {
+                Progress = 0,
+                Status = "started",
+                Message = $"Démarrage de l'import avec {totalActions} actions",
+                TotalActions = totalActions
+            });
+            
+            await _csvImportHubContext.Clients.Client(connectionId).SendAsync("ReceiveLog", new LogEntry
+            {
+                LevelText = "info",
+                Level = ModelLogLevel.Information,
+                Message = $"Démarrage de l'import avec {totalActions} actions"
+            });
+        }
+        
+        public async Task SendImportProgressAsync(string? connectionId, int current, int total, string message)
+        {
+            if (string.IsNullOrEmpty(connectionId))
+            {
+                _logger.LogWarning("ID de connexion non fourni pour l'envoi de progression");
+                return;
+            }
+            
+            int progress = total > 0 ? (int)((current * 100.0) / total) : 0;
+            
+            await _csvImportHubContext.Clients.Client(connectionId).SendAsync("ReceiveProgress", new ImportProgress
+            {
+                Progress = progress,
+                Status = "in_progress",
+                Message = message,
+                CurrentAction = current,
+                TotalActions = total
+            });
+            
+            // Ne pas envoyer un log pour chaque action pour éviter de surcharger l'interface
+            if (current % 10 == 0 || current == total - 1)
+            {
+                await _csvImportHubContext.Clients.Client(connectionId).SendAsync("ReceiveLog", new LogEntry
+                {
+                    LevelText = "info",
+                    Level = ModelLogLevel.Information,
+                    Message = $"Progression: {progress}% - {current}/{total} - {message}"
+                });
+            }
+        }
+        
+        public async Task SendImportCompletedAsync(string? connectionId, ImportResult result)
+        {
+            if (string.IsNullOrEmpty(connectionId))
+            {
+                _logger.LogWarning("ID de connexion non fourni pour l'envoi de notification de fin");
+                return;
+            }
+            
+            await SendCsvImportCompleteAsync(connectionId, result);
         }
     }
 } 

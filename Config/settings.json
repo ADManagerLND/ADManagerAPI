@@ -1,37 +1,28 @@
 {
   "api": {
-    "apiUrl": "https://api.admanager.local",
-    "apiVersion": "v1",
-    "apiTimeout": 30,
-    "apiRateLimit": 100,
-    "enableLogging": true,
-    "language": "fr",
-    "theme": "light",
-    "itemsPerPage": 10,
-    "sessionTimeout": 30,
-    "enableNotifications": true
+    "apiUrl": "https://api.admanager.local"
   },
   "ldap": {
-    "ldapServer": "ldap://admanager.local",
-    "ldapDomain": "ldap://admanager.local",
-    "ldapPort": 389,
-    "ldapBaseDn": "dc=admanager,dc=local",
-    "ldapUsername": "cn=admin,dc=admanager,dc=local",
+    "ldapServer": "",
+    "ldapDomain": "",
+    "ldapPort": 0,
+    "ldapBaseDn": "",
+    "ldapUsername": "",
     "ldapPassword": "",
-    "ldapSsl": false,
-    "ldapPageSize": 1000
+    "ldapSsl": true,
+    "ldapPageSize": 0
   },
   "userAttributes": {
     "attributes": [
       {
         "name": "objectClass",
-        "description": "Contient la liste des classes d'objet Active Directory (ex : top, person, organizationalPerson, user).",
+        "description": "Contient la liste des classes d\u0027objet Active Directory (ex : top, person, organizationalPerson, user).",
         "syntax": "String[]",
         "isRequired": true
       },
       {
         "name": "title",
-        "description": "Titre ou fonction (ex : Élève, Enseignant, etc.)",
+        "description": "Titre ou fonction (ex : \u00C9l\u00E8ve, Enseignant, etc.)",
         "syntax": "String",
         "isRequired": true
       },
@@ -43,67 +34,67 @@
       },
       {
         "name": "userPrincipalName",
-        "description": "Nom principal d'utilisateur au format e-mail pour la connexion (ex : prenom.nom@domaine.com).",
+        "description": "Nom principal d\u0027utilisateur au format e-mail pour la connexion (ex : prenom.nom@domaine.com).",
         "syntax": "String",
         "isRequired": true
       },
       {
         "name": "mail",
-        "description": "Adresse de messagerie de l'utilisateur.",
+        "description": "Adresse de messagerie de l\u0027utilisateur.",
         "syntax": "String",
         "isRequired": false
       },
       {
         "name": "givenName",
-        "description": "Prénom de l'utilisateur.",
+        "description": "Pr\u00E9nom de l\u0027utilisateur.",
         "syntax": "String",
         "isRequired": true
       },
       {
         "name": "sn",
-        "description": "Nom de famille de l'utilisateur (souvent en majuscule).",
+        "description": "Nom de famille de l\u0027utilisateur (souvent en majuscule).",
         "syntax": "String",
         "isRequired": true
       },
       {
         "name": "initials",
-        "description": "Initiales dérivées du prénom et du nom de l'utilisateur.",
+        "description": "Initiales d\u00E9riv\u00E9es du pr\u00E9nom et du nom de l\u0027utilisateur.",
         "syntax": "String",
         "isRequired": false
       },
       {
         "name": "cn",
-        "description": "Nom complet de l'utilisateur tel qu'affiché dans l'annuaire (ex : Prénom Nom).",
+        "description": "Nom complet de l\u0027utilisateur tel qu\u0027affich\u00E9 dans l\u0027annuaire (ex : Pr\u00E9nom Nom).",
         "syntax": "String",
         "isRequired": true
       },
       {
         "name": "personalTitle",
-        "description": "Civilité ou titre personnel de l'utilisateur (ex : M, Mme).",
+        "description": "Civilit\u00E9 ou titre personnel de l\u0027utilisateur (ex : M, Mme).",
         "syntax": "String",
         "isRequired": false
       },
       {
         "name": "displayName",
-        "description": "Nom d'affichage standardisé (ex : Prénom NOM).",
+        "description": "Nom d\u0027affichage standardis\u00E9 (ex : Pr\u00E9nom NOM).",
         "syntax": "String",
         "isRequired": true
       },
       {
         "name": "division",
-        "description": "Groupe ou division (ici stocke la classe de l'élève).",
+        "description": "Groupe ou division (ici stocke la classe de l\u0027\u00E9l\u00E8ve).",
         "syntax": "String",
         "isRequired": false
       },
       {
         "name": "description",
-        "description": "Champ libre décrivant l'utilisateur (ex : Élève de la classe...).",
+        "description": "Champ libre d\u00E9crivant l\u0027utilisateur (ex : \u00C9l\u00E8ve de la classe...).",
         "syntax": "String",
         "isRequired": false
       },
       {
         "name": "department",
-        "description": "Département, service ou organisation (ex : 'Élèves / [Classe]').",
+        "description": "D\u00E9partement, service ou organisation (ex : \u0027\u00C9l\u00E8ves / [Classe]\u0027).",
         "syntax": "String",
         "isRequired": false
       }
@@ -113,65 +104,52 @@
     {
       "id": "f9b20a11-83af-4e4f-8fa6-c85fbc5e27d2",
       "name": "import user 2025",
-      "description": "",
+      "description": "Configuration",
       "createdBy": "Syst\u00E8me",
       "configData": {
+        "Mappings": {},
+        "Folders": {
+          "HomeDirectoryTemplate": "\\192\\Data\\%username%",
+          "HomeDriveLetter": "D:",
+          "TargetServerName": "192",
+          "ShareNameForUserFolders": "{user}$",
+          "LocalPathForUserShareOnServer": "C:\\Data",
+          "EnableShareProvisioning": true,
+          "DefaultShareSubfolders": [
+            "Documents",
+            "Desktop"
+          ]
+        },
+        "ClassGroupFolderCreationConfig": {},
+        "TeamGroupCreationConfig": {},
+        "NetBiosDomainName": "lyc",
         "createMissingOUs": true,
-        "defaultOU": "OU=TEST,DC=adtst01,DC=local",
+        "defaultOU": "OU=TEST,DC=,DC=",
         "overwriteExisting": true,
         "moveObjects": true,
         "deleteNotInImport": false,
-        "userOptions": {
-          "enabledByDefault": true,
-          "mustChangePassword": true,
-          "defaultPassword": "Temp@Password123",
-          "defaultGroups": []
-        },
         "csvDelimiter": ";",
         "headerMapping": {
           "title": "Eleve",
-          "sAMAccountName": "%prenom%.%nom:uppercase% (%prenom:lowercase%.%nom:lowercase%)",
-          "userPrincipalName": "%prenom:lowercase%.%nom:lowercase%@lycee-ndchallans.com",
-          "mail": "%prenom:lowercase%.%nom:lowercase%@lycee-ndchallans.com",
+          "sAMAccountName": "%prenom:username%.%nom:username%",
+          "userPrincipalName": "%prenom:username%.%nom:username%@lycee-ndchallans.com",
+          "mail": "%prenom:username%.%nom:username%@lycee-ndchallans.com",
           "givenName": "%prenom%",
           "sn": "%nom:uppercase%",
           "initials": "%prenom:first%.%nom:first%",
-          "cn": "%prenom%.%nom% (%prenom:lowercase%.%nom:lowercase%)",
+          "cn": "%prenom% %nom%",
           "personalTitle": "%sex%",
           "pager": "%datenaissance%",
           "facsimileTelephoneNumber": "%datenaissance%",
           "displayName": "%prenom% %nom:uppercase%",
           "division": "%classe%",
-          "description": "El\u00E8ve de la classe de %classe%",
+          "description": "\u00C9l\u00E8ve de la classe de %classe%",
           "department": "Eleves / %classe%",
           "physicalDeliveryOfficeName": "%classe%",
-          "company": "Lycée Notre-Dame",
+          "company": "Lyc\u00E9e Notre-Dame",
           "homeDrive": "P:",
-          "homeDirectory": " \\\\DATAA\\%prenom%.%nom%$"
+          "homeDirectory": "\\\\DATAA\\%prenom:username%.%nom:username%$"
         },
-        "classGroupFolderCreationConfig": {
-          "createClassGroupFolderColumnName": "CreerDossierClasse_CSV",
-          "classGroupIdColumnName": "IdClasse_CSV",
-          "classGroupNameColumnName": "NomClasse_CSV",
-          "classGroupTemplateNameColumnName": "TemplateDossierClasse_CSV"
-        },
-        "teamGroupCreationConfig": {
-          "createTeamGroupColumnName": "CreerEquipeTeam_CSV",
-          "teamGroupNameColumnName": "NomEquipeTeam_CSV"
-        },
-        "requiredFields": [
-          "samAccountName",
-          "givenName",
-          "surname",
-          "path",
-          "Sex",
-          "Nom",
-          "Prenom",
-          "Classe",
-          "Code",
-          "DateNaissance"
-        ],
-        "dryRun": false,
         "skipErrors": false,
         "manualColumns": [
           "sex",
@@ -182,78 +160,88 @@
           "dateNaissance"
         ],
         "ouColumn": "classe",
-        "NetBiosDomainName": "ADTST01",
-        "Folders": {
-          "HomeDirectoryTemplate": "\\172.20.0.100\\Data\\Eleves2\\%division%\\%username%",
-          "HomeDriveLetter": "H:",
-          "DefaultDivisionValue": null,
-          "TargetServerName": "172.20.0.100",
-          "ShareNameForUserFolders": "Eleves2",
-          "LocalPathForUserShareOnServer": "C:\\Data\\Eleves2",
-          "EnableShareProvisioning": true,
-          "DefaultShareSubfolders": [ "Documents", "Desktop" ]
-        }
+        "samAccountNameColumn": "sAMAccountName"
       },
       "createdAt": "2025-03-18T10:00:26.2967464+01:00"
     }
   ],
-  "FolderManagementSettings": {
+  "folderManagement": {
     "BaseStudentPath": "D:\\Students",
     "BaseClassGroupPath": "D:\\Classes",
-    "BaseNtfsPath": "D:\\Shares\\Users",
-    "EnableShareProvisioning": true,
-    "DefaultShareSubfolders": [ "Documents", "Desktop", "Downloads", "Pictures" ],
-    "Templates": [
+    "Templates": [],
+    "AdminShareLetter": "C:"
+  },
+  "fsrmSettings": {
+    "enableFsrmQuotas": false,
+    "quotaTemplatesByRole": {},
+    "defaultQuotaTemplate": "1GB_Limit",
+    "enableFileScreening": false,
+    "fileScreenTemplatesByRole": {},
+    "defaultFileScreenTemplate": "Block_Executables",
+    "enableReporting": true,
+    "reportSchedule": "Weekly"
+  },
+  "netBiosDomainName": "",
+  "teamsIntegration": {
+    "enabled": true,
+    "autoCreateTeamsForOUs": true,
+    "autoAddUsersToTeams": true,
+    "defaultTeacherUserId": "00",
+    "excludedOUs": [],
+    "teamNamingTemplate": "Classe {OUName}",
+    "teamDescriptionTemplate": "\u00C9quipe pour la classe {OUName}",
+    "outTeacherMappings": {},
+    "graphApiTimeoutSeconds": 30,
+    "maxRetryAttempts": 3,
+    "retryDelayMs": 5000,
+    "mappings": [
       {
-        "Name": "StandardStudentTemplate",
-        "Type": "Student",
-        "SubFolders": [
-          {
-            "Path": "Documents",
-            "Permissions": []
-          },
-          {
-            "Path": "Assignments",
-            "Permissions": []
-          },
-          {
-            "Path": "Grades",
-            "Permissions": []
-          },
-          {
-            "Path": "Personal_Infos_{Id}",
-            "Permissions": []
-          }
-        ]
+        "ouDistinguishedName": "OU=DefaultClass,DC=,DC=",
+        "teamId": "default-team-id-001",
+        "groupId": "default-group-id-001",
+        "className": "DefaultClass",
+        "createdAt": "2024-01-01T00:00:00Z",
+        "lastSyncAt": "2024-01-01T00:00:00Z",
+        "isActive": true,
+        "memberCount": 0,
+        "metadata": {}
       },
       {
-        "Name": "StandardClassTemplate",
-        "Type": "ClassGroup",
-        "SubFolders": [
-          {
-            "Path": "CourseMaterials",
-            "Permissions": []
-          },
-          {
-            "Path": "StudentList",
-            "Permissions": []
-          },
-          {
-            "Path": "Announcements_{Name}",
-            "Permissions": []
-          }
-        ]
+        "ouDistinguishedName": "OU=2A,OU=TEST,DC=,DC=",
+        "teamId": "dc17acec-4da2-419f-baef-9775698b3277",
+        "groupId": "dc17acec-4da2-419f-baef-9775698b3277",
+        "className": "2A",
+        "createdAt": "2025-06-15T16:10:21.5401627Z",
+        "lastSyncAt": "2025-06-15T16:10:21.5401628Z",
+        "isActive": true,
+        "memberCount": 0,
+        "metadata": {}
+      },
+      {
+        "ouDistinguishedName": "OU=1B,OU=TEST,DC=,DC=",
+        "teamId": "2880fc01-8b8a-46e8-92c6-55ae876ea62c",
+        "groupId": "2880fc01-8b8a-46e8-92c6-55ae876ea62c",
+        "className": "1B",
+        "createdAt": "2025-06-15T16:11:21.0813698Z",
+        "lastSyncAt": "2025-06-15T16:11:21.08137Z",
+        "isActive": true,
+        "memberCount": 0,
+        "metadata": {}
+      },
+      {
+        "ouDistinguishedName": "OU=1E,OU=TEST,DC=,DC=",
+        "teamId": "ab8d40e0-b9c6-41ad-9bf8-3e11192a78c6",
+        "groupId": "ab8d40e0-b9c6-41ad-9bf8-3e11192a78c6",
+        "className": "1E",
+        "createdAt": "2025-06-15T16:17:47.6098067Z",
+        "lastSyncAt": "2025-06-15T16:17:47.6098069Z",
+        "isActive": true,
+        "memberCount": 0,
+        "metadata": {}
       }
-    ]
-  },
-  "FsrmSettings": {
-    "EnableFsrmQuotas": true,
-    "FsrmServerName": null,
-    "QuotaTemplatesByRole": {
-      "Student": "1GB_Quota_Template_Students",
-      "Professor": "10GB_Quota_Template_Staff",
-      "Administrative": "5GB_Quota_Template_Admin"
-    }
-  },
-  "NetBiosDomainName": "ADTST01"
+    ],
+    "azureADClientId": "1",
+    "azureADTenantId": "a",
+    "azureADClientSecret": "Y"
+  }
 }

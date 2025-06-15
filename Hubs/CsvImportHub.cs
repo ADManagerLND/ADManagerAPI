@@ -41,34 +41,37 @@ namespace ADManagerAPI.Hubs
             _fileData.TryRemove(Context.ConnectionId, out _);
             FileDataStore.ClearCsvData(Context.ConnectionId);
             
+            AnalysisDataStore.ClearAnalysis(Context.ConnectionId);
+            _logger.LogInformation($"[OnDisconnectedAsync] Données nettoyées pour ConnectionId: {Context.ConnectionId}");
+            
             await base.OnDisconnectedAsync(exception);
         }
         
         
         public async Task StartAnalysis(string configId)
         {
-            _logger.LogInformation($"StartAnalysis appelé par le client {Context.ConnectionId} avec configId: {configId}");
+            _logger.LogInformation($"🚀 StartAnalysis appelé par le client {Context.ConnectionId} avec configId: {configId}");
             
-            var spreadsheetData = FileDataStore.GetCsvData(Context.ConnectionId);
-          
-            if (spreadsheetData == null || spreadsheetData.Count == 0)
+            // S'assurer que la connexion est toujours active
+            if (Context.ConnectionAborted.IsCancellationRequested)
             {
-                spreadsheetData = FileDataStore.GetCsvData();
-                
-                if (spreadsheetData == null || spreadsheetData.Count == 0)
-                {
-                    _logger.LogWarning($"Aucune donnée de fichier trouvée pour la connexion {Context.ConnectionId}");
-                    await _signalRService.SendCsvAnalysisErrorAsync(Context.ConnectionId, "Aucune donnée de fichier trouvée. Veuillez d'abord uploader un fichier.");
-                    return;
-                }
-                else
-                {
-                    _logger.LogInformation($"Données de fichier trouvées avec la clé par défaut, les associer à la connexion {Context.ConnectionId}");
-                    FileDataStore.SetCsvData(spreadsheetData, Context.ConnectionId);
-                }
+                _logger.LogWarning($"StartAnalysis: Connexion {Context.ConnectionId} a été annulée");
+                return;
             }
             
-            _logger.LogInformation($"Données de fichier trouvées pour la connexion {Context.ConnectionId}: {spreadsheetData.Count} lignes");
+            // Récupérer les données stockées temporairement (sans connectionId)
+            var spreadsheetData = FileDataStore.GetCsvData();
+            
+            if (spreadsheetData == null || spreadsheetData.Count == 0)
+            {
+                _logger.LogWarning($"Aucune donnée de fichier trouvée");
+                await _signalRService.SendCsvAnalysisErrorAsync(Context.ConnectionId, "Aucune donnée de fichier trouvée. Veuillez d'abord uploader un fichier.");
+                return;
+            }
+            
+            // Associer les données à cette connexion pour l'analyse
+            FileDataStore.SetCsvData(spreadsheetData, Context.ConnectionId);
+            _logger.LogInformation($"Données de fichier trouvées et associées à la connexion {Context.ConnectionId}: {spreadsheetData.Count} lignes");
             
             try
             {
@@ -99,18 +102,22 @@ namespace ADManagerAPI.Hubs
                 
                 await _signalRService.SendCsvAnalysisProgressAsync(Context.ConnectionId, 30, "analyzing", "Analyse des colonnes et validation des données...");
                 
-                AnalysisResult result = await _spreadsheetImportService.AnalyzeSpreadsheetDataAsync(spreadsheetData, config);
+                AnalysisResult result = await _spreadsheetImportService.AnalyzeSpreadsheetDataAsync(spreadsheetData, config, Context.ConnectionId, Context.ConnectionAborted);
                 
                 _logger.LogInformation($"[StartAnalysis_HUB_LOG] Post-AnalyzeSpreadsheetDataAsync. ConnectionId: {Context.ConnectionId}. AnalysisResult.Success: {result.Success}. result.Analysis is null: {(result.Analysis == null)}. Actions if not null: {result.Analysis?.Actions?.Count ?? -1}. ErrorMessage: {result.ErrorMessage}");
 
                 if (result.Success)
                 {
-                    _logger.LogWarning("[StartAnalysis_HUB_LOG] === DANS BLOC IF RESULT.SUCCESS ===");
+                    _logger.LogInformation($"[StartAnalysis_HUB_LOG] === ANALYSE RÉUSSIE POUR {Context.ConnectionId} ===");
 
                     _logger.LogInformation($"[StartAnalysis_HUB_LOG] Analysis was successful. ConnectionId: {Context.ConnectionId}. Storing result.Analysis into AnalysisDataStore.");
-                    AnalysisDataStore.SetLatestAnalysis(result.Analysis); 
-                    var storedAnalysis = AnalysisDataStore.GetLatestAnalysis(); 
-                    _logger.LogInformation($"[StartAnalysis_HUB_LOG] Assigned result.Analysis to AnalysisDataStore. ConnectionId: {Context.ConnectionId}. Analysis in DataStore is null: {(storedAnalysis == null)}. Actions if not null: {storedAnalysis?.Actions?.Count ?? -1}");
+                    
+                    // Stocker l'analyse avec le connectionId
+                    AnalysisDataStore.SetAnalysis(Context.ConnectionId, result.Analysis); 
+                    
+                    // Vérification immédiate
+                    var storedAnalysis = AnalysisDataStore.GetAnalysis(Context.ConnectionId); 
+                    _logger.LogInformation($"[StartAnalysis_HUB_LOG] ✅ Analyse stockée pour ConnectionId: {Context.ConnectionId}. Analysis in DataStore is null: {(storedAnalysis == null)}. Actions if not null: {storedAnalysis?.Actions?.Count ?? -1}");
 
                     // Mettre à jour _analysisActions pour l'interface utilisateur, seulement si des actions concrètes existent.
                     if (result.Analysis?.Actions != null && result.Analysis.Actions.Any())
@@ -149,13 +156,29 @@ namespace ADManagerAPI.Hubs
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Erreur lors de l'analyse des données du fichier");
-                await _signalRService.SendCsvAnalysisErrorAsync(Context.ConnectionId, $"Erreur lors de l'analyse des données du fichier: {ex.Message}");
+                
+                // Vérifier si la connexion est toujours active avant d'envoyer l'erreur
+                if (!Context.ConnectionAborted.IsCancellationRequested)
+                {
+                    await _signalRService.SendCsvAnalysisErrorAsync(Context.ConnectionId, $"Erreur lors de l'analyse des données du fichier: {ex.Message}");
+                }
+                else
+                {
+                    _logger.LogWarning($"StartAnalysis: Impossible d'envoyer l'erreur, connexion {Context.ConnectionId} fermée");
+                }
             }
         }
         
         public async Task StartImport(ImportOperationData importData)
         {
             _logger.LogInformation($"StartImport appelé par le client {Context.ConnectionId}");
+            
+            // S'assurer que la connexion est toujours active
+            if (Context.ConnectionAborted.IsCancellationRequested)
+            {
+                _logger.LogWarning($"StartImport: Connexion {Context.ConnectionId} a été annulée");
+                return;
+            }
             
             if (importData == null)
             {
@@ -225,7 +248,21 @@ namespace ADManagerAPI.Hubs
                 {
                     _logger.LogInformation($"[StartImport] No client actions provided. ConnectionId: {Context.ConnectionId}. Attempting to use analysis from AnalysisDataStore.");
                     
-                    ImportAnalysis analysisToExecute = AnalysisDataStore.GetLatestAnalysis();
+                    AnalysisDataStore.LogCurrentState();
+                    _logger.LogInformation($"[StartImport] Tentative de récupération de l'analyse pour ConnectionId: {Context.ConnectionId}");
+                    
+                    ImportAnalysis analysisToExecute = AnalysisDataStore.GetAnalysis(Context.ConnectionId);
+                    
+                    // Fallback vers la méthode legacy si aucune analyse trouvée avec connectionId
+                    if (analysisToExecute == null)
+                    {
+                        _logger.LogWarning($"[StartImport] Aucune analyse trouvée pour ConnectionId {Context.ConnectionId}, tentative avec méthode legacy");
+                        analysisToExecute = AnalysisDataStore.GetLatestAnalysis();
+                        if (analysisToExecute != null)
+                        {
+                            _logger.LogInformation($"[StartImport] Analyse trouvée via méthode legacy avec {analysisToExecute.Actions?.Count ?? 0} actions");
+                        }
+                    }
 
                     if (analysisToExecute != null && analysisToExecute.Actions != null && analysisToExecute.Actions.Any())
                     {
@@ -245,8 +282,20 @@ namespace ADManagerAPI.Hubs
                         result = new ImportResult
                         {
                             Success = false,
-                            Details = $"Aucune analyse stockée avec des actions exécutables disponible (Raison: {reason}). StartAnalysis doit être appelé en premier.",
-                            Summary = new ImportSummary { ErrorCount = 1, TotalObjects = spreadsheetData?.Count ?? 0 } 
+                            Message = $"Aucune analyse stockée avec des actions exécutables disponible (Raison: {reason}). StartAnalysis doit être appelé en premier.",
+                            TotalActions = 1,
+                            ErrorCount = 1,
+                            Results = new List<ImportActionResult>
+                            {
+                                new ImportActionResult
+                                {
+                                    Success = false,
+                                    ActionType = ActionType.ERROR,
+                                    ObjectName = "Import",
+                                    Path = "",
+                                    Message = $"Aucune analyse préalable disponible: {reason}"
+                                }
+                            }
                         };
                     }
                 }
@@ -257,7 +306,16 @@ namespace ADManagerAPI.Hubs
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Erreur lors de l'exécution de l'import");
-                await _signalRService.SendCsvAnalysisErrorAsync(Context.ConnectionId, $"Erreur lors de l'exécution de l'import: {ex.Message}");
+                
+                // Vérifier si la connexion est toujours active avant d'envoyer l'erreur
+                if (!Context.ConnectionAborted.IsCancellationRequested)
+                {
+                    await _signalRService.SendCsvAnalysisErrorAsync(Context.ConnectionId, $"Erreur lors de l'exécution de l'import: {ex.Message}");
+                }
+                else
+                {
+                    _logger.LogWarning($"StartImport: Impossible d'envoyer l'erreur, connexion {Context.ConnectionId} fermée");
+                }
             }
         }
     }

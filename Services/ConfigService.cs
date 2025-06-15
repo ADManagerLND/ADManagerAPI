@@ -1,15 +1,8 @@
-using System;
-using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Threading.Tasks;
-using System.Collections.Generic;
 using ADManagerAPI.Models;
 using ADManagerAPI.Services.Interfaces;
 using ADManagerAPI.Config;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
-using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.DataProtection;
 
 namespace ADManagerAPI.Services;
@@ -26,14 +19,19 @@ public class ConfigService : IConfigService
     public ConfigService(ILogger<ConfigService> logger, IDataProtectionProvider dataProtectionProvider)
     {
         _logger = logger;
-        _configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config");
+        
+        // Correction du chemin pour utiliser le dossier Config à la racine de l'application
+        string basePath = Directory.GetCurrentDirectory(); // Chemin racine de l'application au lieu de AppDomain.CurrentDomain.BaseDirectory qui pointe vers bin/
+        _configPath = Path.Combine(basePath, "Config");
         _settingsFilePath = Path.Combine(_configPath, "settings.json");
+        
         Directory.CreateDirectory(_configPath);
         _dataProtectionProvider = dataProtectionProvider;
         _serializerOptions = new JsonSerializerOptions
         {
             WriteIndented = true,
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+            PropertyNamingPolicy = null // Utiliser les annotations JsonPropertyName explicites
         };
         LoadSettingsAsync().Wait();
     }
@@ -42,15 +40,20 @@ public class ConfigService : IConfigService
     {
         try
         {
+            _logger.LogInformation("Chargement des paramètres depuis : {FilePath}", _settingsFilePath);
+            
             if (File.Exists(_settingsFilePath))
             {
+                _logger.LogInformation("Fichier de configuration trouvé, chargement des paramètres");
                 var json = await File.ReadAllTextAsync(_settingsFilePath);
                 _settings = JsonSerializer.Deserialize<ApplicationSettings>(json) ?? new ApplicationSettings();
                 _settings.FolderManagementSettings ??= new FolderManagementSettings();
                 _settings.FsrmSettings ??= new FsrmSettings();
+                _logger.LogInformation("Paramètres chargés avec succès");
             }
             else
             {
+                _logger.LogWarning("Fichier de configuration non trouvé à {FilePath}, création d'une nouvelle configuration", _settingsFilePath);
                 _settings = new ApplicationSettings();
                 _settings.FolderManagementSettings ??= new FolderManagementSettings();
                 _settings.FsrmSettings ??= new FsrmSettings();
@@ -59,12 +62,12 @@ public class ConfigService : IConfigService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erreur lors du chargement des paramètres");
+            _logger.LogError(ex, "Erreur lors du chargement des paramètres depuis {FilePath}", _settingsFilePath);
             _settings = new ApplicationSettings();
         }
     }
 
-    private async Task SaveSettingsAsync(ApplicationSettings settings = null)
+    private async Task SaveSettingsAsync(ApplicationSettings? settings = null)
     {
         try
         {
@@ -118,7 +121,7 @@ public class ConfigService : IConfigService
     }
     #endregion
 
-    #region Configurations d'import
+    #region Configurations d'import (utilisées aussi pour les mappages AD)
     public Task<List<SavedImportConfig>> GetSavedImportConfigs()
     {
         try
@@ -212,7 +215,9 @@ public class ConfigService : IConfigService
 
     private string GetConfigDirectory()
     {
-        return _configPath;
+        // Utiliser le chemin racine de l'application + Config
+        string basePath = Directory.GetCurrentDirectory();
+        return Path.Combine(basePath, "Config");
     }
 
     /// <summary>
@@ -237,21 +242,24 @@ public class ConfigService : IConfigService
             {
                 config.HeaderMapping = new Dictionary<string, string>
                 {
-                    { "login", "sAMAccountName" },
-                    { "firstname", "givenName" },
-                    { "lastname", "sn" },
-                    { "email", "mail" },
-                    { "phone", "telephoneNumber" },
-                    { "title", "title" }
+                    { "sAMAccountName", "%prenom:lowercase%.%nom:lowercase%" },
+                    { "givenName", "%prenom%" },
+                    { "sn", "%nom:uppercase%" },
+                    { "mail", "%prenom:lowercase%.%nom:lowercase%@entreprise.com" },
+                    { "userPrincipalName", "%prenom:lowercase%.%nom:lowercase%@entreprise.com" },
+                    { "displayName", "%prenom% %nom:uppercase%" },
+                    { "cn", "%prenom% %nom%" },
+                    { "telephoneNumber", "%telephone%" },
+                    { "title", "%fonction%" }
                 };
             }
             else if (objectType.Equals("computer", StringComparison.OrdinalIgnoreCase))
             {
                 config.HeaderMapping = new Dictionary<string, string>
                 {
-                    { "name", "sAMAccountName" },
-                    { "description", "description" },
-                    { "location", "location" }
+                    { "sAMAccountName", "%nom%" },
+                    { "description", "%description%" },
+                    { "location", "%emplacement%" }
                 };
             }
             
@@ -386,7 +394,7 @@ public class ConfigService : IConfigService
         {
             new AdAttributeDefinition { Name = "objectClass", Description = "Type d'objet dans l'Active Directory", Syntax = "StringArray", IsRequired = true },
             new AdAttributeDefinition { Name = "title", Description = "Titre ou fonction", Syntax = "String", IsRequired = false },
-            new AdAttributeDefinition { Name = "samAccountName", Description = "Nom de connexion de l'utilisateur", Syntax = "String", IsRequired = true },
+            new AdAttributeDefinition { Name = "sAMAccountName", Description = "Nom de connexion de l'utilisateur", Syntax = "String", IsRequired = true },
             new AdAttributeDefinition { Name = "userPrincipalName", Description = "Nom principal de l'utilisateur", Syntax = "String", IsRequired = true },
             new AdAttributeDefinition { Name = "mail", Description = "Adresse email", Syntax = "String", IsRequired = false },
             new AdAttributeDefinition { Name = "givenName", Description = "Prénom de l'utilisateur", Syntax = "String", IsRequired = true },
@@ -454,6 +462,37 @@ public class ConfigService : IConfigService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Erreur lors de la mise à jour de la configuration FSRM");
+            throw;
+        }
+    }
+    #endregion
+
+    #region Teams Integration Settings
+    public async Task<TeamsIntegrationConfig> GetTeamsIntegrationSettingsAsync()
+    {
+        try
+        {
+            _settings ??= new ApplicationSettings();
+            _settings.TeamsIntegration ??= new TeamsIntegrationConfig();
+            return _settings.TeamsIntegration;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erreur lors de la récupération de la configuration d'intégration Teams");
+            throw;
+        }
+    }
+
+    public async Task UpdateTeamsIntegrationSettingsAsync(TeamsIntegrationConfig settings)
+    {
+        try
+        {
+            _settings.TeamsIntegration = settings;
+            await SaveSettingsAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erreur lors de la mise à jour de la configuration d'intégration Teams");
             throw;
         }
     }

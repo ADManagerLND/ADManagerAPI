@@ -14,5 +14,6 @@ namespace ADManagerAPI.Models
         public string OrganizationalUnit { get; set; }
         public bool Enabled { get; set; }
         public Dictionary<string, string> AdditionalAttributes { get; set; } = new();
+        public string DistinguishedName { get; set; } = string.Empty;
     }
 }
