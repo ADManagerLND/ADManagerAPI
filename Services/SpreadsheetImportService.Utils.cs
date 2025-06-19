@@ -34,6 +34,15 @@ public partial class SpreadsheetImportService
             }
         }
 
+        // 🔧 CORRECTION CRITIQUE : Conserver la colonne OU si elle existe dans les données originales
+        if (!string.IsNullOrEmpty(config.ouColumn) && row.ContainsKey(config.ouColumn))
+        {
+            var ouValue = row[config.ouColumn];
+            if (!string.IsNullOrWhiteSpace(ouValue))
+            {
+                result[config.ouColumn] = ouValue;
+            }
+        }
 
         // Valider et auto-compléter les attributs obligatoires manquants
         ValidateRequiredAttributes(result);

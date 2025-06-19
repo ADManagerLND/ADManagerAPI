@@ -240,3 +240,6 @@ var port = useHttps ? HttpsPort : HttpPort;
 app.Logger.LogInformation($"🚀 ADManagerAPI démarré sur {protocol}://0.0.0.0:{port} " + 
                          (useHttps ? "avec certificat certnew.cer" : "en mode HTTP"));
 app.Run();
+
+// Rendre la classe Program accessible pour les tests d'intégration
+public partial class Program { }

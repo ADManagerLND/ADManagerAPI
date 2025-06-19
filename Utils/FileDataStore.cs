@@ -58,4 +58,24 @@ public class FileDataStore
         ClearCsvData(key);
         ClearRawFileData(key);
     }
+    
+    // ✅ NOUVELLE MÉTHODE: Récupérer tous les connectionIds disponibles
+    public static List<string> GetAllConnectionIds()
+    {
+        var allIds = new HashSet<string>();
+        
+        // Ajouter tous les IDs des données CSV
+        foreach (var key in _csvData.Keys)
+        {
+            allIds.Add(key);
+        }
+        
+        // Ajouter tous les IDs des données brutes
+        foreach (var key in _rawFileData.Keys)
+        {
+            allIds.Add(key);
+        }
+        
+        return allIds.ToList();
+    }
 }

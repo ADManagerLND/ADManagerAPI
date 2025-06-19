@@ -1,7 +1,9 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-#
+# 
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ADManagerAPI", "ADManagerAPI.csproj", "{AC74B580-9B9D-4D1D-A87E-32D1ED80E911}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ADManagerAPI.Tests", "ADManagerAPI.Tests\ADManagerAPI.Tests.csproj", "{3A665ACD-FE2B-40AE-AB54-6C4034AE0118}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -13,5 +15,9 @@ Global
 		{AC74B580-9B9D-4D1D-A87E-32D1ED80E911}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{AC74B580-9B9D-4D1D-A87E-32D1ED80E911}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{AC74B580-9B9D-4D1D-A87E-32D1ED80E911}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3A665ACD-FE2B-40AE-AB54-6C4034AE0118}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3A665ACD-FE2B-40AE-AB54-6C4034AE0118}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3A665ACD-FE2B-40AE-AB54-6C4034AE0118}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3A665ACD-FE2B-40AE-AB54-6C4034AE0118}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
