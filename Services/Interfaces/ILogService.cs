@@ -4,7 +4,6 @@ namespace ADManagerAPI.Services.Interfaces;
 
 public interface ILogService
 {
-    
     void LogUserAction(string username, string action, string details);
     void LogError(string source, string message, Exception? exception = null);
     List<LogEntry> GetRecentLogEntries(int count = 100);

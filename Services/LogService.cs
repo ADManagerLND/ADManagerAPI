@@ -7,10 +7,10 @@ namespace ADManagerAPI.Services;
 public class LogService : ILogService
 {
     private static readonly object _lockObject = new();
+    private readonly List<LogEntry> _logEntries = new();
     private readonly string _logFilePath;
     private readonly ILogger<LogService> _logger;
     private readonly IServiceScopeFactory _serviceScopeFactory;
-    private readonly List<LogEntry> _logEntries = new();
 
     public LogService(ILogger<LogService> logger, IServiceScopeFactory serviceScopeFactory)
     {
@@ -20,7 +20,7 @@ public class LogService : ILogService
 
         Directory.CreateDirectory(Path.GetDirectoryName(_logFilePath));
     }
-    
+
     public void LogUserAction(string username, string action, string details)
     {
         var logEntry = new LogEntry
@@ -34,7 +34,7 @@ public class LogService : ILogService
 
         SaveLogEntry(logEntry);
     }
-    
+
     public void LogError(string source, string message, Exception? exception = null)
     {
         var details = exception != null
@@ -52,12 +52,12 @@ public class LogService : ILogService
 
         SaveLogEntry(logEntry);
     }
-    
+
     public List<LogEntry> GetRecentLogEntries(int count = 100)
     {
         return GetAllLogEntries().OrderByDescending(l => l.Timestamp).Take(count).ToList();
     }
-    
+
     public List<LogEntry> SearchLogEntries(string searchTerm, DateTime? startDate = null, DateTime? endDate = null)
     {
         var logs = GetAllLogEntries();
@@ -90,7 +90,7 @@ public class LogService : ILogService
             Level = LogLevel.Information,
             LevelText = "info"
         };
-        
+
         _logEntries.Add(logEntry);
         _logger.LogInformation($"[{category}] {message}");
     }
@@ -98,6 +98,26 @@ public class LogService : ILogService
     public Task<List<LogEntry>> GetLogs(int count = 100)
     {
         return Task.FromResult(_logEntries.OrderByDescending(l => l.Timestamp).Take(count).ToList());
+    }
+
+    public async Task LogActionAsync(LogAction action, string message, string details)
+    {
+        var logEntry = new LogEntry
+        {
+            Timestamp = DateTime.Now,
+            Type = "SystemAction",
+            Action = action.ToString(),
+            Message = message,
+            Details = details,
+            Level = GetLogLevelForAction(action),
+            LevelText = GetLogLevelTextForAction(action)
+        };
+
+        _logEntries.Add(logEntry);
+
+        SaveLogEntry(logEntry);
+
+        await Task.CompletedTask;
     }
 
     private void SaveLogEntry(LogEntry logEntry)
@@ -215,26 +235,6 @@ public class LogService : ILogService
         }
     }
 
-    public async Task LogActionAsync(LogAction action, string message, string details)
-    {
-        var logEntry = new LogEntry
-        {
-            Timestamp = DateTime.Now,
-            Type = "SystemAction",
-            Action = action.ToString(),
-            Message = message,
-            Details = details,
-            Level = GetLogLevelForAction(action),
-            LevelText = GetLogLevelTextForAction(action)
-        };
-        
-        _logEntries.Add(logEntry);
-
-        SaveLogEntry(logEntry);
-
-        await Task.CompletedTask;
-    }
-    
     private LogLevel GetLogLevelForAction(LogAction action)
     {
         return action switch
@@ -245,7 +245,7 @@ public class LogService : ILogService
             _ => LogLevel.Information
         };
     }
-    
+
     private string GetLogLevelTextForAction(LogAction action)
     {
         return action switch

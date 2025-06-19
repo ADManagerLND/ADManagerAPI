@@ -1,43 +1,78 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Microsoft.NET.Sdk.Web">
-  <PropertyGroup>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <PropertyGroup>
+        <TargetFramework>net8.0-windows</TargetFramework>
 
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
 
-    <UseWindowsForms>false</UseWindowsForms>
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <ApplicationManifest>app.manifest</ApplicationManifest>
-  </PropertyGroup>
+        <UseWindowsForms>false</UseWindowsForms>
+        <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+        <ApplicationManifest>app.manifest</ApplicationManifest>
+    </PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="CsvHelper" Version="33.0.1" />
-    <PackageReference Include="EPPlus" Version="8.0.5" />
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.Negotiate" Version="8.0.2" />
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.2" />
-    <PackageReference Include="Microsoft.Identity.Web" Version="3.8.4" />
-    <PackageReference Include="Microsoft.Identity.Web.GraphServiceClient" Version="3.9.3" />
-    <PackageReference Include="Microsoft.Identity.Web.UI" Version="3.8.4" />
-    <PackageReference Include="Microsoft.Management.Infrastructure" Version="3.0.0" />
-    <PackageReference Include="Microsoft.PowerShell.SDK" Version="7.5.1" />
-    <PackageReference Include="Swashbuckle.AspNetCore" Version="7.3.1" />
-    <PackageReference Include="System.DirectoryServices.AccountManagement" Version="8.0.0" />
-    <PackageReference Include="System.Management" Version="8.0.0" />
+    <ItemGroup>
+        <PackageReference Include="CsvHelper" Version="33.0.1"/>
+        <PackageReference Include="EPPlus" Version="8.0.5"/>
+        <PackageReference Include="Microsoft.AspNetCore.Authentication.Negotiate" Version="8.0.2"/>
+        <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.2"/>
+        <PackageReference Include="Microsoft.Identity.Web" Version="3.8.4"/>
+        <PackageReference Include="Microsoft.Identity.Web.GraphServiceClient" Version="3.9.3"/>
+        <PackageReference Include="Microsoft.Identity.Web.UI" Version="3.8.4"/>
+        <PackageReference Include="Microsoft.Management.Infrastructure" Version="3.0.0"/>
+        <PackageReference Include="Microsoft.PowerShell.SDK" Version="7.5.1"/>
+        <PackageReference Include="Swashbuckle.AspNetCore" Version="7.3.1"/>
+        <PackageReference Include="System.DirectoryServices.AccountManagement" Version="8.0.0"/>
+        <PackageReference Include="System.Management" Version="8.0.0"/>
 
-    <PackageReference Include="System.IO.FileSystem.AccessControl" Version="5.0.0" />
+        <PackageReference Include="System.IO.FileSystem.AccessControl" Version="5.0.0"/>
 
-    <PackageReference Include="System.Management.Automation" Version="7.3.7" />
-    <PackageReference Include="System.Security.AccessControl" Version="6.0.1" />
+        <PackageReference Include="System.Management.Automation" Version="7.3.7"/>
+        <PackageReference Include="System.Security.AccessControl" Version="6.0.1"/>
 
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.0" />
-  </ItemGroup>
+        <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.0"/>
+    </ItemGroup>
 
-  <ItemGroup>
-    <!-- Exclure les fichiers du projet de test de la compilation du projet principal -->
-    <Compile Remove="ADManagerAPI.Tests\**\*.cs" />
-    <None Include="ADManagerAPI.Tests\**\*.cs" ExcludeNodes="%(RecursiveDir)%(Filename)%(Extension)" />
-  </ItemGroup>
+    <ItemGroup>
+        <!-- ✅ EXCLUSION GLOBALE : Exclure complètement le dossier admanagerweb du build -->
+        <None Remove="admanagerweb\**\*" />
+        <Compile Remove="admanagerweb\**\*" />
+        <Content Remove="admanagerweb\**\*" />
+        <EmbeddedResource Remove="admanagerweb\**\*" />
+        
+        <!-- Exclure les fichiers du projet de test de la compilation du projet principal -->
+        <Compile Remove="ADManagerAPI.Tests\**\*.cs"/>
+        <None Include="ADManagerAPI.Tests\**\*.cs" ExcludeNodes="%(RecursiveDir)%(Filename)%(Extension)"/>
+        
+        <!-- ✅ EXCLUSION GLOBALE : Exclure tous les dossiers de publication précédents -->
+        <None Remove="publish*\**\*" />
+        <Compile Remove="publish*\**\*" />
+        <Content Remove="publish*\**\*" />
+        <EmbeddedResource Remove="publish*\**\*" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <_ContentIncludedByDefault Remove="ADManagerAPI.Tests\bin\Debug\net8.0-windows\ADManagerAPI.deps.json" />
+      <_ContentIncludedByDefault Remove="ADManagerAPI.Tests\bin\Debug\net8.0-windows\ADManagerAPI.runtimeconfig.json" />
+      <_ContentIncludedByDefault Remove="ADManagerAPI.Tests\bin\Debug\net8.0-windows\ADManagerAPI.Tests.deps.json" />
+      <_ContentIncludedByDefault Remove="ADManagerAPI.Tests\bin\Debug\net8.0-windows\ADManagerAPI.Tests.runtimeconfig.json" />
+      <_ContentIncludedByDefault Remove="ADManagerAPI.Tests\bin\Debug\net8.0-windows\ADManagerAPI.Tests\obj\ADManagerAPI.Tests.csproj.nuget.dgspec.json" />
+      <_ContentIncludedByDefault Remove="ADManagerAPI.Tests\bin\Debug\net8.0-windows\ADManagerAPI.Tests\obj\project.assets.json" />
+      <_ContentIncludedByDefault Remove="ADManagerAPI.Tests\bin\Debug\net8.0-windows\ADManagerAPI.Tests\obj\project.packagespec.json" />
+      <_ContentIncludedByDefault Remove="ADManagerAPI.Tests\bin\Debug\net8.0-windows\admanagerweb\package-lock.json" />
+      <_ContentIncludedByDefault Remove="ADManagerAPI.Tests\bin\Debug\net8.0-windows\admanagerweb\package.json" />
+      <_ContentIncludedByDefault Remove="ADManagerAPI.Tests\bin\Debug\net8.0-windows\admanagerweb\tsconfig.app.json" />
+      <_ContentIncludedByDefault Remove="ADManagerAPI.Tests\bin\Debug\net8.0-windows\admanagerweb\tsconfig.json" />
+      <_ContentIncludedByDefault Remove="ADManagerAPI.Tests\bin\Debug\net8.0-windows\admanagerweb\tsconfig.node.json" />
+      <_ContentIncludedByDefault Remove="ADManagerAPI.Tests\bin\Debug\net8.0-windows\appsettings.Development.json" />
+      <_ContentIncludedByDefault Remove="ADManagerAPI.Tests\bin\Debug\net8.0-windows\appsettings.json" />
+      <_ContentIncludedByDefault Remove="ADManagerAPI.Tests\bin\Debug\net8.0-windows\Config\settings.json" />
+      <_ContentIncludedByDefault Remove="ADManagerAPI.Tests\bin\Debug\net8.0-windows\global.json" />
+      <_ContentIncludedByDefault Remove="ADManagerAPI.Tests\obj\ADManagerAPI.Tests.csproj.nuget.dgspec.json" />
+      <_ContentIncludedByDefault Remove="ADManagerAPI.Tests\obj\Debug\net8.0-windows\ADManagerAPI.Tests.sourcelink.json" />
+      <_ContentIncludedByDefault Remove="ADManagerAPI.Tests\obj\project.assets.json" />
+      <_ContentIncludedByDefault Remove="ADManagerAPI.Tests\obj\project.packagespec.json" />
+    </ItemGroup>
 
 </Project>
