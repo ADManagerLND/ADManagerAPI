@@ -359,13 +359,29 @@ public class FileImportController : ControllerBase
     [HttpPost("upload-file-only")]
     public async Task<IActionResult> UploadFileOnly(
         IFormFile file,
-        string connectionId)
+        string? connectionId = null)
     {
         try
         {
+            Console.WriteLine("🔥🔥🔥 UPLOAD-FILE-ONLY APPELÉ 🔥🔥🔥");
+            _logger.LogInformation("🔥🔥🔥 UPLOAD-FILE-ONLY APPELÉ 🔥🔥🔥");
+            
             if (file == null) return BadRequest(new { error = "Aucun fichier fourni" });
 
-            _logger.LogInformation($"📁 [FileImportController] Upload du fichier {file.FileName} sans analyse automatique");
+            // ✅ NOUVELLE APPROCHE: ConnectionId optionnel, génération d'ID temporaire si manquant
+            if (string.IsNullOrEmpty(connectionId))
+            {
+                connectionId = "http-" + Guid.NewGuid().ToString();
+                Console.WriteLine($"🔧🔧🔧 ConnectionId généré automatiquement: {connectionId} 🔧🔧🔧");
+                _logger.LogInformation($"🔧 [FileImportController] ConnectionId généré automatiquement: {connectionId}");
+            }
+            else
+            {
+                Console.WriteLine($"✅✅✅ ConnectionId fourni: {connectionId} ✅✅✅");
+                _logger.LogInformation($"✅ [FileImportController] ConnectionId fourni: {connectionId}");
+            }
+
+            _logger.LogInformation($"📁 [FileImportController] Upload du fichier {file.FileName} sans analyse automatique (connectionId: {connectionId})");
 
             // Valider le type de fichier
             var extension = Path.GetExtension(file.FileName).ToLowerInvariant();

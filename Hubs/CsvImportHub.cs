@@ -186,7 +186,30 @@ public class CsvImportHub : Hub
             // Si pas de données parsées, parser le fichier brut avec la bonne configuration
             if (spreadsheetData == null || spreadsheetData.Count == 0)
             {
+                // ✅ CORRECTION: Chercher les données brutes avec TOUS les connectionId possibles
                 var rawFileData = FileDataStore.GetRawFileData(Context.ConnectionId);
+                
+                // Si pas trouvé avec le connectionId SignalR, chercher avec les connectionId HTTP
+                if (rawFileData == null)
+                {
+                    _logger.LogInformation($"🔧 Données non trouvées avec connectionId SignalR {Context.ConnectionId}, recherche avec connectionId HTTP...");
+                    var allConnectionIds = FileDataStore.GetAllConnectionIds();
+                    _logger.LogInformation($"🔧 ConnectionIds disponibles: [{string.Join(", ", allConnectionIds)}]");
+                    
+                    foreach (var connectionId in allConnectionIds)
+                    {
+                        if (connectionId.StartsWith("http-"))
+                        {
+                            rawFileData = FileDataStore.GetRawFileData(connectionId);
+                            if (rawFileData != null)
+                            {
+                                _logger.LogInformation($"✅ Données trouvées avec connectionId HTTP: {connectionId}");
+                                break;
+                            }
+                        }
+                    }
+                }
+                
                 if (rawFileData == null)
                 {
                     _logger.LogWarning("Aucune donnée de fichier trouvée (ni parsée ni brute)");

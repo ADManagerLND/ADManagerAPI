@@ -939,26 +939,47 @@ public partial class SpreadsheetImportService
         var cleanedSamAccountName = samAccountName.Trim();
         _logger?.LogDebug($"✅ sAMAccountName nettoyé: '{cleanedSamAccountName}'");
         var actions = new List<ImportAction>();
-        var ouPath = DetermineUserOuPath(mappedRow, config);
 
-        // ✅ VÉRIFICATION OU depuis le cache (SANS appel LDAP)
-        var ouExists = ousToBeCreated.Contains(ouPath) || cache.ExistingOUs.Contains(ouPath);
+        // ✅ CORRECTION MAJEURE : Améliorer la logique de détermination de l'OU
+        var requestedOuPath = DetermineUserOuPath(mappedRow, config);
+        var finalOuPath = requestedOuPath;
+
+
+
+        // ✅ VÉRIFICATION OU depuis le cache avec logique améliorée
+        var ouExists = ousToBeCreated.Contains(requestedOuPath) || cache.ExistingOUs.Contains(requestedOuPath);
 
         if (!ouExists)
         {
-            if (config.CreateMissingOUs)
+            // ✅ CORRECTION : TOUJOURS créer les OUs manquantes si ce ne sont pas des OUs par défaut
+            var isDefaultOu = string.Equals(requestedOuPath, config.DefaultOU, StringComparison.OrdinalIgnoreCase);
+            
+            if (!isDefaultOu)
             {
-                ousToBeCreated.Add(ouPath);
+                // Si l'OU demandée n'est pas l'OU par défaut, la créer automatiquement
+                _logger.LogInformation($"📁 OU '{requestedOuPath}' manquante pour '{cleanedSamAccountName}' - Ajout à la création automatique");
+                ousToBeCreated.Add(requestedOuPath);
                 ouExists = true;
+                finalOuPath = requestedOuPath;
+            }
+            else if (config.CreateMissingOUs)
+            {
+                // Si c'est l'OU par défaut et que la création est activée
+                ousToBeCreated.Add(requestedOuPath);
+                ouExists = true;
+                finalOuPath = requestedOuPath;
             }
             else
             {
-                _logger.LogWarning(
-                    $"OU '{ouPath}' n'existe pas, utilisation de l'OU par défaut pour '{cleanedSamAccountName}'");
-                ouPath = config.DefaultOU;
+                // Cas exceptionnel : même l'OU par défaut n'existe pas et la création est désactivée
+                _logger.LogWarning($"⚠️ OU par défaut '{requestedOuPath}' n'existe pas pour '{cleanedSamAccountName}' et CreateMissingOUs est désactivé");
+                finalOuPath = config.DefaultOU; // Forcer l'OU par défaut de la config
             }
         }
-
+        else
+        {
+            finalOuPath = requestedOuPath;
+        }
 
         var userExists = cache.ExistingUsers.ContainsKey(cleanedSamAccountName);
 
@@ -973,11 +994,11 @@ public partial class SpreadsheetImportService
             var currentOu = existingUser.OrganizationalUnit;
 
             if (!string.IsNullOrEmpty(currentOu) &&
-                !string.Equals(currentOu, ouPath, StringComparison.OrdinalIgnoreCase))
+                !string.Equals(currentOu, finalOuPath, StringComparison.OrdinalIgnoreCase))
             {
                 // L'utilisateur doit être déplacé
                 userActionType = ActionType.MOVE_USER;
-                userActionMessage = $"Déplacement nécessaire : de '{currentOu}' vers '{ouPath}'";
+                userActionMessage = $"Déplacement nécessaire : de '{currentOu}' vers '{finalOuPath}'";
                 mappedRow["SourceOU"] = currentOu;
                 cache.Statistics.CacheHits++;
             }
@@ -1030,14 +1051,14 @@ public partial class SpreadsheetImportService
             {
                 ActionType = userActionType,
                 ObjectName = cleanedSamAccountName,
-                Path = ouPath,
+                Path = finalOuPath, // ✅ Utiliser l'OU finale déterminée
                 Message = userActionMessage,
                 Attributes = userAttributes
             });
         }
 
         // Actions supplémentaires (avec vérifications asynchrones)
-        var additionalActions = await ProcessAdditionalUserActionsOptimizedAsync(mappedRow, config, cleanedSamAccountName, ouPath);
+        var additionalActions = await ProcessAdditionalUserActionsOptimizedAsync(mappedRow, config, cleanedSamAccountName, finalOuPath);
         actions.AddRange(additionalActions);
 
         return actions;
