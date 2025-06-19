@@ -1,16 +1,16 @@
 {
   "api": {
-    "apiUrl": "https://api.admanager.local"
+    "apiUrl": "http://localhost:5021"
   },
   "ldap": {
     "ldapServer": "",
-    "ldapDomain": "",
-    "ldapPort": 0,
-    "ldapBaseDn": "",
+    "ldapDomain": ".nd",
+    "ldapPort": 636,
+    "ldapBaseDn": "DC=,DC=nd",
     "ldapUsername": "",
     "ldapPassword": "",
     "ldapSsl": true,
-    "ldapPageSize": 0
+    "ldapPageSize": 500
   },
   "userAttributes": {
     "attributes": [
@@ -23,79 +23,79 @@
       {
         "name": "title",
         "description": "Titre ou fonction (ex : \u00C9l\u00E8ve, Enseignant, etc.)",
-        "syntax": "String",
+        "syntax": "string",
         "isRequired": true
       },
       {
         "name": "sAMAccountName",
         "description": "Identifiant unique pour la connexion au domaine (Windows).",
-        "syntax": "String",
+        "syntax": "string",
         "isRequired": true
       },
       {
         "name": "userPrincipalName",
         "description": "Nom principal d\u0027utilisateur au format e-mail pour la connexion (ex : prenom.nom@domaine.com).",
-        "syntax": "String",
+        "syntax": "string",
         "isRequired": true
       },
       {
         "name": "mail",
         "description": "Adresse de messagerie de l\u0027utilisateur.",
-        "syntax": "String",
+        "syntax": "string",
         "isRequired": false
       },
       {
         "name": "givenName",
         "description": "Pr\u00E9nom de l\u0027utilisateur.",
-        "syntax": "String",
+        "syntax": "string",
         "isRequired": true
       },
       {
         "name": "sn",
         "description": "Nom de famille de l\u0027utilisateur (souvent en majuscule).",
-        "syntax": "String",
-        "isRequired": true
+        "syntax": "string",
+        "isRequired": false
       },
       {
         "name": "initials",
         "description": "Initiales d\u00E9riv\u00E9es du pr\u00E9nom et du nom de l\u0027utilisateur.",
-        "syntax": "String",
+        "syntax": "string",
         "isRequired": false
       },
       {
         "name": "cn",
         "description": "Nom complet de l\u0027utilisateur tel qu\u0027affich\u00E9 dans l\u0027annuaire (ex : Pr\u00E9nom Nom).",
-        "syntax": "String",
+        "syntax": "string",
         "isRequired": true
       },
       {
         "name": "personalTitle",
         "description": "Civilit\u00E9 ou titre personnel de l\u0027utilisateur (ex : M, Mme).",
-        "syntax": "String",
+        "syntax": "string",
         "isRequired": false
       },
       {
         "name": "displayName",
         "description": "Nom d\u0027affichage standardis\u00E9 (ex : Pr\u00E9nom NOM).",
-        "syntax": "String",
+        "syntax": "string",
         "isRequired": true
       },
       {
         "name": "division",
         "description": "Groupe ou division (ici stocke la classe de l\u0027\u00E9l\u00E8ve).",
-        "syntax": "String",
+        "syntax": "string",
         "isRequired": false
       },
       {
         "name": "description",
         "description": "Champ libre d\u00E9crivant l\u0027utilisateur (ex : \u00C9l\u00E8ve de la classe...).",
-        "syntax": "String",
+        "syntax": "string",
         "isRequired": false
       },
       {
         "name": "department",
         "description": "D\u00E9partement, service ou organisation (ex : \u0027\u00C9l\u00E8ves / [Classe]\u0027).",
-        "syntax": "String",
+        "syntax": "string",
         "isRequired": false
       }
     ]
@@ -103,26 +103,32 @@
   "imports": [
     {
       "id": "f9b20a11-83af-4e4f-8fa6-c85fbc5e27d2",
-      "name": "import user 2025",
-      "description": "Configuration",
+      "name": "Import \u00C9l\u00E8ves Lyc\u00E9e 2025",
+      "description": "Configuration compl\u00E8te pour l\u0027importation des \u00E9l\u00E8ves avec cr\u00E9ation automatique des comptes Active Directory, dossiers personnels, et int\u00E9gration Teams",
       "createdBy": "Syst\u00E8me",
       "configData": {
-        "Mappings": {},
         "Folders": {
-          "HomeDirectoryTemplate": "\\192\\Data\\%username%",
-          "HomeDriveLetter": "D:",
-          "TargetServerName": "192",
-          "ShareNameForUserFolders": "{user}$",
+          "HomeDirectoryTemplate": "\\\\Data\\%username%",
+          "HomeDriveLetter": "P:",
+          "TargetServerName": "
+          "ShareNameForUserFolders": "Data",
           "LocalPathForUserShareOnServer": "C:\\Data",
           "EnableShareProvisioning": true,
           "DefaultShareSubfolders": [
             "Documents",
-            "Desktop"
+            "Desktop",
+            "test",
+            "Pictures"
           ]
         },
-        "ClassGroupFolderCreationConfig": {},
-        "TeamGroupCreationConfig": {},
-        "NetBiosDomainName": "lyc",
+        "TeamsIntegration": {
+          "enabled": true,
+          "autoAddUsersToTeams": true,
+          "defaultTeacherUserId": "",
+          "teamNamingTemplate": "Classe {OUName} - Ann\u00E9e 2025",
+          "teamDescriptionTemplate": "\u00C9quipe collaborative pour la classe {OUName}",
+          "folderMappings": []
+        },
         "createMissingOUs": true,
         "defaultOU": "OU=TEST,DC=,DC=",
         "overwriteExisting": true,
@@ -148,7 +154,7 @@
           "physicalDeliveryOfficeName": "%classe%",
           "company": "Lyc\u00E9e Notre-Dame",
           "homeDrive": "P:",
-          "homeDirectory": "\\\\DATAA\\%prenom:username%.%nom:username%$"
+          "homeDirectory": "\\\%prenom:username%.%nom:username%$"
         },
         "skipErrors": false,
         "manualColumns": [
@@ -160,9 +166,14 @@
           "dateNaissance"
         ],
         "ouColumn": "classe",
-        "samAccountNameColumn": "sAMAccountName"
+        "samAccountNameColumn": "sAMAccountName",
+        "disabledActionTypes": [],
+        "defaultPassword": "TempPass123!"
       },
-      "createdAt": "2025-03-18T10:00:26.2967464+01:00"
+      "createdAt": "2025-03-18T10:00:26.2967464+01:00",
+      "updatedAt": "2025-06-19T12:16:01.525Z",
+      "isEnabled": true,
+      "category": "Import"
     }
   ],
   "folderManagement": {
@@ -181,67 +192,26 @@
     "enableReporting": true,
     "reportSchedule": "Weekly"
   },
-  "netBiosDomainName": "",
+  "netBiosDomainName": "LYCEE.ND",
+  "defaultPassword": "TempPass123!",
   "teamsIntegration": {
     "enabled": true,
-    "autoCreateTeamsForOUs": true,
-    "autoAddUsersToTeams": true,
-    "defaultTeacherUserId": "00",
-    "excludedOUs": [],
-    "teamNamingTemplate": "Classe {OUName}",
-    "teamDescriptionTemplate": "\u00C9quipe pour la classe {OUName}",
-    "outTeacherMappings": {},
-    "graphApiTimeoutSeconds": 30,
-    "maxRetryAttempts": 3,
-    "retryDelayMs": 5000,
-    "mappings": [
-      {
-        "ouDistinguishedName": "OU=DefaultClass,DC=,DC=",
-        "teamId": "default-team-id-001",
-        "groupId": "default-group-id-001",
-        "className": "DefaultClass",
-        "createdAt": "2024-01-01T00:00:00Z",
-        "lastSyncAt": "2024-01-01T00:00:00Z",
-        "isActive": true,
-        "memberCount": 0,
-        "metadata": {}
-      },
-      {
-        "ouDistinguishedName": "OU=2A,OU=TEST,DC=,DC=",
-        "teamId": "dc17acec-4da2-419f-baef-9775698b3277",
-        "groupId": "dc17acec-4da2-419f-baef-9775698b3277",
-        "className": "2A",
-        "createdAt": "2025-06-15T16:10:21.5401627Z",
-        "lastSyncAt": "2025-06-15T16:10:21.5401628Z",
-        "isActive": true,
-        "memberCount": 0,
-        "metadata": {}
-      },
-      {
-        "ouDistinguishedName": "OU=1B,OU=TEST,DC=,DC=",
-        "teamId": "2880fc01-8b8a-46e8-92c6-55ae876ea62c",
-        "groupId": "2880fc01-8b8a-46e8-92c6-55ae876ea62c",
-        "className": "1B",
-        "createdAt": "2025-06-15T16:11:21.0813698Z",
-        "lastSyncAt": "2025-06-15T16:11:21.08137Z",
-        "isActive": true,
-        "memberCount": 0,
-        "metadata": {}
-      },
-      {
-        "ouDistinguishedName": "OU=1E,OU=TEST,DC=,DC=",
-        "teamId": "ab8d40e0-b9c6-41ad-9bf8-3e11192a78c6",
-        "groupId": "ab8d40e0-b9c6-41ad-9bf8-3e11192a78c6",
-        "className": "1E",
-        "createdAt": "2025-06-15T16:17:47.6098067Z",
-        "lastSyncAt": "2025-06-15T16:17:47.6098069Z",
-        "isActive": true,
-        "memberCount": 0,
-        "metadata": {}
-      }
+    "excludedOUs": [
+      "OU=System",
+      "OU=Service Accounts",
+      "OU=Computers",
+      "OU=Domain Controllers"
     ],
-    "azureADClientId": "1",
-    "azureADTenantId": "a",
-    "azureADClientSecret": "Y"
+    "mappings": [
+ 
+    ]
+  },
+  "azureAD": {
+   
+  },
+  "graphApi": {
+    "timeoutSeconds": 30,
+    "maxRetryAttempts": 3,
+    "retryDelayMs": 5000
   }
 }

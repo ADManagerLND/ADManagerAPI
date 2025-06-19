@@ -1,30 +1,31 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using ADManagerAPI.Config;
 using ADManagerAPI.Models;
 using ADManagerAPI.Services.Interfaces;
-using ADManagerAPI.Config;
 using Microsoft.AspNetCore.DataProtection;
 
 namespace ADManagerAPI.Services;
 
 public class ConfigService : IConfigService
 {
-    private readonly ILogger<ConfigService> _logger;
     private readonly string _configPath;
+    private readonly IDataProtectionProvider _dataProtectionProvider;
+    private readonly ILogger<ConfigService> _logger;
+    private readonly JsonSerializerOptions _serializerOptions;
     private readonly string _settingsFilePath;
     private ApplicationSettings _settings;
-    private readonly IDataProtectionProvider _dataProtectionProvider;
-    private readonly JsonSerializerOptions _serializerOptions;
 
     public ConfigService(ILogger<ConfigService> logger, IDataProtectionProvider dataProtectionProvider)
     {
         _logger = logger;
-        
+
         // Correction du chemin pour utiliser le dossier Config à la racine de l'application
-        string basePath = Directory.GetCurrentDirectory(); // Chemin racine de l'application au lieu de AppDomain.CurrentDomain.BaseDirectory qui pointe vers bin/
+        var basePath =
+            Directory.GetCurrentDirectory(); // Chemin racine de l'application au lieu de AppDomain.CurrentDomain.BaseDirectory qui pointe vers bin/
         _configPath = Path.Combine(basePath, "Config");
         _settingsFilePath = Path.Combine(_configPath, "settings.json");
-        
+
         Directory.CreateDirectory(_configPath);
         _dataProtectionProvider = dataProtectionProvider;
         _serializerOptions = new JsonSerializerOptions
@@ -41,7 +42,7 @@ public class ConfigService : IConfigService
         try
         {
             _logger.LogInformation("Chargement des paramètres depuis : {FilePath}", _settingsFilePath);
-            
+
             if (File.Exists(_settingsFilePath))
             {
                 _logger.LogInformation("Fichier de configuration trouvé, chargement des paramètres");
@@ -53,7 +54,9 @@ public class ConfigService : IConfigService
             }
             else
             {
-                _logger.LogWarning("Fichier de configuration non trouvé à {FilePath}, création d'une nouvelle configuration", _settingsFilePath);
+                _logger.LogWarning(
+                    "Fichier de configuration non trouvé à {FilePath}, création d'une nouvelle configuration",
+                    _settingsFilePath);
                 _settings = new ApplicationSettings();
                 _settings.FolderManagementSettings ??= new FolderManagementSettings();
                 _settings.FsrmSettings ??= new FsrmSettings();
@@ -72,10 +75,10 @@ public class ConfigService : IConfigService
         try
         {
             _logger.LogInformation("Début de sauvegarde des paramètres dans {FilePath}", _settingsFilePath);
-            
+
             settings ??= _settings;
             var json = JsonSerializer.Serialize(settings, _serializerOptions);
-            
+
             // S'assurer que le répertoire existe
             var directory = Path.GetDirectoryName(_settingsFilePath);
             if (!Directory.Exists(directory) && directory != null)
@@ -83,22 +86,19 @@ public class ConfigService : IConfigService
                 _logger.LogInformation("Création du répertoire {Directory}", directory);
                 Directory.CreateDirectory(directory);
             }
-            
+
             // Écrire directement dans un nouveau fichier temporaire puis remplacer le fichier existant
             // pour éviter les problèmes de verrouillage ou d'écriture partielle
-            string tempFile = _settingsFilePath + ".tmp";
+            var tempFile = _settingsFilePath + ".tmp";
             await File.WriteAllTextAsync(tempFile, json);
-            
-            if (File.Exists(_settingsFilePath))
-            {
-                File.Delete(_settingsFilePath);
-            }
-            
+
+            if (File.Exists(_settingsFilePath)) File.Delete(_settingsFilePath);
+
             File.Move(tempFile, _settingsFilePath);
-            
+
             // Mettre à jour la version en mémoire
             _settings = settings;
-            
+
             _logger.LogInformation("Paramètres sauvegardés avec succès dans {FilePath}", _settingsFilePath);
         }
         catch (Exception ex)
@@ -109,6 +109,7 @@ public class ConfigService : IConfigService
     }
 
     #region Configuration complète
+
     public async Task<ApplicationSettings> GetAllSettingsAsync()
     {
         return _settings;
@@ -119,14 +120,24 @@ public class ConfigService : IConfigService
         _settings = settings;
         await SaveSettingsAsync();
     }
+
     #endregion
 
     #region Configurations d'import (utilisées aussi pour les mappages AD)
+
     public Task<List<SavedImportConfig>> GetSavedImportConfigs()
     {
         try
         {
-            return Task.FromResult(_settings.Imports);
+            // Si aucune configuration n'existe, charger la configuration du Lycée par défaut
+            if (_settings.Imports == null || _settings.Imports.Count == 0) LoadDefaultLyceeConfig();
+
+            // CLONAGE PROFOND pour éviter la pollution de l'état du singleton
+            var serialized = JsonSerializer.Serialize(_settings.Imports, _serializerOptions);
+            var clonedConfigs = JsonSerializer.Deserialize<List<SavedImportConfig>>(serialized) 
+                                ?? new List<SavedImportConfig>();
+
+            return Task.FromResult(clonedConfigs);
         }
         catch (Exception ex)
         {
@@ -134,22 +145,47 @@ public class ConfigService : IConfigService
             throw;
         }
     }
-    
+
+    private void LoadDefaultLyceeConfig()
+    {
+        try
+        {
+            var defaultConfigPath = Path.Combine(_configPath, "lycee-import-optimized-2025.json");
+
+            if (File.Exists(defaultConfigPath))
+            {
+                _logger.LogInformation("Chargement de la configuration par défaut du Lycée Notre-Dame");
+                var json = File.ReadAllText(defaultConfigPath);
+                var defaultConfig = JsonSerializer.Deserialize<SavedImportConfig>(json, _serializerOptions);
+
+                if (defaultConfig != null)
+                {
+                    _settings.Imports = new List<SavedImportConfig> { defaultConfig };
+                    _logger.LogInformation("Configuration par défaut chargée avec succès");
+                }
+            }
+            else
+            {
+                _logger.LogWarning("Fichier de configuration par défaut non trouvé: {Path}", defaultConfigPath);
+                _settings.Imports = new List<SavedImportConfig>();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erreur lors du chargement de la configuration par défaut");
+            _settings.Imports = new List<SavedImportConfig>();
+        }
+    }
+
     public async Task<SavedImportConfig> SaveImportConfig(SavedImportConfig config)
     {
         try
         {
-            if (string.IsNullOrEmpty(config.Id))
-            {
-                config.Id = Guid.NewGuid().ToString();
-            }
+            if (string.IsNullOrEmpty(config.Id)) config.Id = Guid.NewGuid().ToString();
 
             var existingConfig = _settings.Imports.FirstOrDefault(c => c.Id == config.Id);
-            if (existingConfig != null)
-            {
-                _settings.Imports.Remove(existingConfig);
-            }
-            
+            if (existingConfig != null) _settings.Imports.Remove(existingConfig);
+
             _settings.Imports.Add(config);
             await SaveSettingsAsync();
 
@@ -161,7 +197,7 @@ public class ConfigService : IConfigService
             throw;
         }
     }
-    
+
     public async Task<bool> DeleteImportConfig(string configId)
     {
         try
@@ -173,6 +209,7 @@ public class ConfigService : IConfigService
                 await SaveSettingsAsync();
                 return true;
             }
+
             return false;
         }
         catch (Exception ex)
@@ -183,7 +220,7 @@ public class ConfigService : IConfigService
     }
 
     /// <summary>
-    /// Supprime toutes les configurations sauvegardées
+    ///     Supprime toutes les configurations sauvegardées
     /// </summary>
     public Task DeleteAllImportConfigs()
     {
@@ -191,10 +228,7 @@ public class ConfigService : IConfigService
         {
             var configDir = GetConfigDirectory();
             var files = Directory.GetFiles(configDir, "*.import.json");
-            foreach (var file in files)
-            {
-                File.Delete(file);
-            }
+            foreach (var file in files) File.Delete(file);
             return Task.CompletedTask;
         }
         catch (Exception ex)
@@ -205,7 +239,7 @@ public class ConfigService : IConfigService
     }
 
     /// <summary>
-    /// Supprime une configuration sauvegardée
+    ///     Supprime une configuration sauvegardée
     /// </summary>
     /// <param name="id">ID de la configuration à supprimer</param>
     private string GetConfigPath(string id)
@@ -216,12 +250,12 @@ public class ConfigService : IConfigService
     private string GetConfigDirectory()
     {
         // Utiliser le chemin racine de l'application + Config
-        string basePath = Directory.GetCurrentDirectory();
+        var basePath = Directory.GetCurrentDirectory();
         return Path.Combine(basePath, "Config");
     }
 
     /// <summary>
-    /// Génère une configuration d'import par défaut
+    ///     Génère une configuration d'import par défaut
     /// </summary>
     /// <param name="objectType">Type d'objet (utilisateur, ordinateur, etc.)</param>
     /// <returns>Configuration par défaut</returns>
@@ -236,10 +270,9 @@ public class ConfigService : IConfigService
                 HeaderMapping = new Dictionary<string, string>(),
                 ManualColumns = new List<string>()
             };
-            
+
             // Ajouter des mappages par défaut selon le type d'objet
             if (objectType.Equals("user", StringComparison.OrdinalIgnoreCase))
-            {
                 config.HeaderMapping = new Dictionary<string, string>
                 {
                     { "sAMAccountName", "%prenom:lowercase%.%nom:lowercase%" },
@@ -252,17 +285,14 @@ public class ConfigService : IConfigService
                     { "telephoneNumber", "%telephone%" },
                     { "title", "%fonction%" }
                 };
-            }
             else if (objectType.Equals("computer", StringComparison.OrdinalIgnoreCase))
-            {
                 config.HeaderMapping = new Dictionary<string, string>
                 {
                     { "sAMAccountName", "%nom%" },
                     { "description", "%description%" },
                     { "location", "%emplacement%" }
                 };
-            }
-            
+
             return Task.FromResult(config);
         }
         catch (Exception ex)
@@ -271,9 +301,11 @@ public class ConfigService : IConfigService
             throw;
         }
     }
+
     #endregion
 
     #region Configuration générale
+
     public Task<ApiSettings> GetApiSettingsAsync()
     {
         try
@@ -300,10 +332,12 @@ public class ConfigService : IConfigService
             throw;
         }
     }
+
     #endregion
 
     #region Configuration LDAP
-    public async Task<Models.LdapSettings> GetLdapSettingsAsync()
+
+    public async Task<LdapSettings> GetLdapSettingsAsync()
     {
         try
         {
@@ -316,22 +350,19 @@ public class ConfigService : IConfigService
         }
     }
 
-    public async Task UpdateLdapSettingsAsync(Models.LdapSettings ldapSettings)
+    public async Task UpdateLdapSettingsAsync(LdapSettings ldapSettings)
     {
-        if (ldapSettings == null)
-        {
-            throw new ArgumentNullException(nameof(ldapSettings));
-        }
+        if (ldapSettings == null) throw new ArgumentNullException(nameof(ldapSettings));
 
         _logger.LogInformation("Début de mise à jour des paramètres LDAP");
-        
+
         try
         {
             // Chiffrer le mot de passe avant de le stocker
             var encryptionHelper = new EncryptionHelper(_dataProtectionProvider);
-            string encryptedPassword = encryptionHelper.EncryptString(ldapSettings.LdapPassword);
+            var encryptedPassword = encryptionHelper.EncryptString(ldapSettings.LdapPassword);
             _logger.LogInformation("Mot de passe chiffré avec succès");
-            
+
             // Mettre à jour les paramètres LDAP dans la configuration mémoire
             _settings.Ldap.LdapServer = ldapSettings.LdapServer;
             _settings.Ldap.LdapDomain = ldapSettings.LdapDomain;
@@ -341,7 +372,7 @@ public class ConfigService : IConfigService
             _settings.Ldap.LdapPassword = encryptedPassword; // Stocke le mot de passe chiffré
             _settings.Ldap.LdapSsl = ldapSettings.LdapSsl;
             _settings.Ldap.LdapPageSize = ldapSettings.LdapPageSize;
-            
+
             // Sauvegarder explicitement dans le fichier
             await SaveSettingsAsync(_settings);
             _logger.LogInformation("Paramètres LDAP sauvegardés dans le fichier {FilePath}", _settingsFilePath);
@@ -352,19 +383,22 @@ public class ConfigService : IConfigService
             throw;
         }
     }
+
     #endregion
 
     #region Attributs utilisateur
+
     public Task<List<AdAttributeDefinition>> GetUserAttributesAsync()
     {
         try
         {
             if (_settings.UserAttributes.Attributes == null || _settings.UserAttributes.Attributes.Count == 0)
             {
-                _logger.LogInformation("Aucun attribut trouvé dans la configuration, utilisation de la configuration par défaut");
+                _logger.LogInformation(
+                    "Aucun attribut trouvé dans la configuration, utilisation de la configuration par défaut");
                 return Task.FromResult(GetDefaultUserAttributes());
             }
-            
+
             return Task.FromResult(_settings.UserAttributes.Attributes);
         }
         catch (Exception ex)
@@ -392,20 +426,37 @@ public class ConfigService : IConfigService
     {
         return new List<AdAttributeDefinition>
         {
-            new AdAttributeDefinition { Name = "objectClass", Description = "Type d'objet dans l'Active Directory", Syntax = "StringArray", IsRequired = true },
-            new AdAttributeDefinition { Name = "title", Description = "Titre ou fonction", Syntax = "String", IsRequired = false },
-            new AdAttributeDefinition { Name = "sAMAccountName", Description = "Nom de connexion de l'utilisateur", Syntax = "String", IsRequired = true },
-            new AdAttributeDefinition { Name = "userPrincipalName", Description = "Nom principal de l'utilisateur", Syntax = "String", IsRequired = true },
-            new AdAttributeDefinition { Name = "mail", Description = "Adresse email", Syntax = "String", IsRequired = false },
-            new AdAttributeDefinition { Name = "givenName", Description = "Prénom de l'utilisateur", Syntax = "String", IsRequired = true },
-            new AdAttributeDefinition { Name = "sn", Description = "Nom de famille", Syntax = "String", IsRequired = true },
-            new AdAttributeDefinition { Name = "initials", Description = "Initiales de l'utilisateur", Syntax = "String", IsRequired = false },
-            new AdAttributeDefinition { Name = "cn", Description = "Nom commun complet", Syntax = "String", IsRequired = true }
+            new()
+            {
+                Name = "objectClass", Description = "Type d'objet dans l'Active Directory", Syntax = "StringArray",
+                IsRequired = true
+            },
+            new() { Name = "title", Description = "Titre ou fonction", Syntax = "String", IsRequired = false },
+            new()
+            {
+                Name = "sAMAccountName", Description = "Nom de connexion de l'utilisateur", Syntax = "String",
+                IsRequired = true
+            },
+            new()
+            {
+                Name = "userPrincipalName", Description = "Nom principal de l'utilisateur", Syntax = "String",
+                IsRequired = true
+            },
+            new() { Name = "mail", Description = "Adresse email", Syntax = "String", IsRequired = false },
+            new() { Name = "givenName", Description = "Prénom de l'utilisateur", Syntax = "String", IsRequired = true },
+            new() { Name = "sn", Description = "Nom de famille", Syntax = "String", IsRequired = true },
+            new()
+            {
+                Name = "initials", Description = "Initiales de l'utilisateur", Syntax = "String", IsRequired = false
+            },
+            new() { Name = "cn", Description = "Nom commun complet", Syntax = "String", IsRequired = true }
         };
     }
+
     #endregion
 
     #region Folder Management Settings
+
     public Task<FolderManagementSettings> GetFolderManagementSettingsAsync()
     {
         try
@@ -434,9 +485,11 @@ public class ConfigService : IConfigService
             throw;
         }
     }
+
     #endregion
 
     #region FSRM Settings
+
     public Task<FsrmSettings> GetFsrmSettingsAsync()
     {
         try
@@ -465,9 +518,11 @@ public class ConfigService : IConfigService
             throw;
         }
     }
+
     #endregion
 
     #region Teams Integration Settings
+
     public async Task<TeamsIntegrationConfig> GetTeamsIntegrationSettingsAsync()
     {
         try
@@ -496,5 +551,64 @@ public class ConfigService : IConfigService
             throw;
         }
     }
+
+    #endregion
+
+    #region Azure Configuration Settings
+
+    public async Task<AzureADConfig> GetAzureADConfigAsync()
+    {
+        try
+        {
+            return _settings.AzureAD ?? new AzureADConfig();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erreur lors de la récupération de la configuration Azure AD");
+            return new AzureADConfig();
+        }
+    }
+
+    public async Task UpdateAzureADConfigAsync(AzureADConfig config)
+    {
+        try
+        {
+            _settings.AzureAD = config;
+            await SaveSettingsAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erreur lors de la mise à jour de la configuration Azure AD");
+            throw;
+        }
+    }
+
+    public async Task<GraphApiConfig> GetGraphApiConfigAsync()
+    {
+        try
+        {
+            return _settings.GraphApi;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erreur lors de la récupération de la configuration Graph API");
+            return new GraphApiConfig();
+        }
+    }
+
+    public async Task UpdateGraphApiConfigAsync(GraphApiConfig config)
+    {
+        try
+        {
+            _settings.GraphApi = config;
+            await SaveSettingsAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Erreur lors de la mise à jour de la configuration Graph API");
+            throw;
+        }
+    }
+
     #endregion
 }

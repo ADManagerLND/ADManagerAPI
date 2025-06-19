@@ -6,3 +6,14 @@ riderModule.iml
 /_ReSharper.Caches/
 appsettings.Development.json
 .env
+
+
+publish*/
+deployment/
+
+*.log
+*.tmp
+*.temp
+
+.vs/
+*.user
